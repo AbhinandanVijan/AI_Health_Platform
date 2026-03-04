@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aihealth-postgres
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Api/Dockerfile
+    container_name: aihealth-api
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: ${CONNSTR_DOCKER}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+    ports:
+      - "8080:8080"
+
+  ocr-worker:
+    build:
+      context: .
+      dockerfile: src/OcrWorker/Dockerfile
+    container_name: aihealth-ocr-worker
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      CONNSTR_DOCKER: ${CONNSTR_DOCKER}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+
+volumes:
+  pgdata:

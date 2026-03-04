@@ -1,0 +1,8 @@
+boto3==1.39.11
+sqlalchemy==2.0.43
+psycopg2-binary==2.9.10
+python-dotenv==1.0.1
+pypdf==5.9.0
+pdf2image==1.17.0
+pytesseract==0.3.13
+Pillow==11.1.0
