@@ -29,5 +29,17 @@ public class AppDbContext : IdentityDbContext<AppUser>
     builder.Entity<RawDocument>()
         .HasIndex(x => new { x.UserId, x.Bucket, x.ObjectKey })
         .IsUnique();
+
+    builder.Entity<ScoreSnapshot>()
+        .HasIndex(x => new { x.UserId, x.DocumentId, x.CreatedAtUtc })
+        .HasDatabaseName("IX_score_document_latest");
+
+    builder.Entity<Recommendation>()
+        .HasIndex(x => new { x.UserId, x.DocumentId, x.CreatedAtUtc })
+        .HasDatabaseName("IX_recommendation_document_latest");
+
+    builder.Entity<Recommendation>()
+        .HasIndex(x => x.ScoreSnapshotId)
+        .HasDatabaseName("IX_recommendation_snapshot");
 }
 }

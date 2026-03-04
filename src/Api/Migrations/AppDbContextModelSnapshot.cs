@@ -250,6 +250,18 @@ namespace Api.Migrations
                     b.Property<string>("ApprovedByUserId")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("ScoreSnapshotId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("text");
@@ -258,6 +270,9 @@ namespace Api.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
                         .HasColumnType("integer");
 
                     b.Property<string>("Title")
@@ -269,6 +284,12 @@ namespace Api.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "DocumentId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_recommendation_document_latest");
+
+                    b.HasIndex("ScoreSnapshotId")
+                        .HasDatabaseName("IX_recommendation_snapshot");
 
                     b.ToTable("Recommendations");
                 });
@@ -289,18 +310,33 @@ namespace Api.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InputsHash")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModelVersion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<int>("OverallScore")
                         .HasColumnType("integer");
 
-                    b.Property<string>("RulesetVersion")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.Property<Guid?>("ProcessingJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("RiskBand")
+                        .HasColumnType("integer");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "DocumentId", "CreatedAtUtc")
+                        .HasDatabaseName("IX_score_document_latest");
 
                     b.ToTable("ScoreSnapshots");
                 });
