@@ -4,6 +4,7 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Api.Auth;
 using Api.Domain;
+using Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -33,9 +34,57 @@ public class UploadsController : ControllerBase
 
     public record PresignRequest(string FileName, string ContentType, DocumentType DocType);
     public record PresignResponse(string UploadUrl, string Bucket, string ObjectKey, DateTime ExpiresAtUtc);
+    public record ReprocessRequest(Guid DocumentId);
+    public record UploadStatusResponse(
+        Guid DocumentId,
+        DocumentStatus DocumentStatus,
+        Guid? LatestJobId,
+        JobStatus? LatestJobStatus,
+        string? LatestJobError,
+        IReadOnlyList<string>? MissingMandatoryBiomarkers
+    );
+
+    [Authorize]
+    [HttpGet("status/{docId:guid}")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(UploadStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<UploadStatusResponse>> GetStatus(Guid docId)
+    {
+        var doc = await _db.RawDocuments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == docId && d.UserId == UserId);
+
+        if (doc is null)
+            return NotFound(new { message = "Document not found" });
+
+        var latestJob = await _db.ProcessingJobs
+            .AsNoTracking()
+            .Where(j => j.DocumentId == docId && j.UserId == UserId)
+            .OrderByDescending(j => j.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+        var evaluation = await BiomarkerCatalogPolicy.EvaluateDocumentAsync(_db, UserId, docId);
+        IReadOnlyList<string>? missing = evaluation.IsSufficient ? null : evaluation.MissingMandatoryBiomarkers;
+
+        return Ok(new UploadStatusResponse(
+            DocumentId: doc.Id,
+            DocumentStatus: doc.Status,
+            LatestJobId: latestJob?.Id,
+            LatestJobStatus: latestJob?.Status,
+            LatestJobError: latestJob?.Error,
+            MissingMandatoryBiomarkers: missing
+        ));
+    }
 
     [Authorize]
     [HttpPost("presign")]
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(PresignResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<PresignResponse> Presign([FromBody] PresignRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.FileName)) return BadRequest("FileName required");
@@ -82,6 +131,10 @@ public class UploadsController : ControllerBase
 
     [Authorize]
     [HttpPost("finalize")]
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Finalize([FromBody] FinalizeRequest req)
     {
         var bucket = _cfg["S3_BUCKET"] ?? throw new InvalidOperationException("Missing S3_BUCKET");
@@ -145,7 +198,23 @@ public class UploadsController : ControllerBase
     }
 
     [Authorize]
+    [HttpPost("reprocess")]
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ReprocessFromBody([FromBody] ReprocessRequest req)
+    {
+        return await Reprocess(req.DocumentId);
+    }
+
+    [Authorize]
     [HttpPost("reprocess/{docId:guid}")]
+    [Produces("application/json")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Reprocess(Guid docId)
     {
         var doc = await _db.RawDocuments

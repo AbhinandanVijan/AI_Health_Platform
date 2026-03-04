@@ -22,6 +22,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
         .HasIndex(x => new { x.UserId, x.BiomarkerCode, x.ObservedAtUtc, x.DocumentId })
         .HasDatabaseName("IX_biomarker_dedupe");
 
+    builder.Entity<BiomarkerReading>()
+        .HasIndex(x => new { x.UserId, x.DocumentId, x.BiomarkerCode })
+        .HasDatabaseName("IX_biomarker_document_code");
+
     builder.Entity<RawDocument>()
         .HasIndex(x => new { x.UserId, x.Bucket, x.ObjectKey })
         .IsUnique();

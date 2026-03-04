@@ -1,7 +1,7 @@
 namespace Api.Domain;
 
 public enum JobType { OcrLabPdf = 1, ParseVcf = 2, Normalize = 3, ScoreRecalc = 4, GenerateRecommendations = 5 }
-public enum JobStatus { Ready = 1, Processing = 2, Succeeded = 3, Failed = 4 }
+public enum JobStatus { Ready = 1, Processing = 2, Succeeded = 3, Failed = 4, InsufficientData = 5 }
 
 public class ProcessingJob
 {

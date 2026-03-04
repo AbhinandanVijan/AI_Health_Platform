@@ -96,8 +96,14 @@ namespace Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("DocumentId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("EnteredByUserId")
+                        .HasColumnType("text");
 
                     b.Property<string>("NormalizedUnit")
                         .HasColumnType("text");
@@ -111,9 +117,15 @@ namespace Api.Migrations
                     b.Property<string>("SourceName")
                         .HasColumnType("text");
 
+                    b.Property<int>("SourceType")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Unit")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -126,6 +138,9 @@ namespace Api.Migrations
 
                     b.HasIndex("UserId", "BiomarkerCode", "ObservedAtUtc", "DocumentId")
                         .HasDatabaseName("IX_biomarker_dedupe");
+
+                    b.HasIndex("UserId", "DocumentId", "BiomarkerCode")
+                        .HasDatabaseName("IX_biomarker_document_code");
 
                     b.ToTable("BiomarkerReadings");
                 });

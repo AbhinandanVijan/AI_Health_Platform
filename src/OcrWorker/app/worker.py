@@ -6,6 +6,8 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from urllib.parse import quote_plus
 from urllib.parse import urlparse
 
@@ -15,6 +17,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.config import Settings, load_settings
+from app.normalization import biomarker_name_to_code
 from app.ocr_parser import parse_and_normalize
 
 
@@ -25,12 +28,78 @@ logging.basicConfig(
 logger = logging.getLogger("ocr-worker")
 
 
+JOB_STATUS_READY = 1
+JOB_STATUS_PROCESSING = 2
+JOB_STATUS_SUCCEEDED = 3
+JOB_STATUS_FAILED = 4
+JOB_STATUS_INSUFFICIENT_DATA = 5
+
+BIOMARKER_SOURCE_OCR = 1
+
+DOCUMENT_STATUS_UPLOADED = 1
+DOCUMENT_STATUS_PROCESSING = 2
+DOCUMENT_STATUS_PROCESSED = 3
+DOCUMENT_STATUS_FAILED = 4
+
+
 @dataclass
 class QueueEnvelope:
     message_id: str
     receipt_handle: str
     sent_timestamp_ms: int
     body: dict
+
+
+@lru_cache(maxsize=1)
+def _load_mandatory_policy() -> dict:
+    policy_path = Path(__file__).resolve().parent / "data" / "mandatory_biomarkers.json"
+    if not policy_path.exists():
+        raise FileNotFoundError(f"Missing mandatory biomarker policy file: {policy_path}")
+
+    with policy_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid mandatory biomarker policy format: root must be an object")
+
+    required_names = payload.get("mandatoryBiomarkers")
+    if not isinstance(required_names, list) or not required_names:
+        raise ValueError("Invalid mandatory biomarker policy: mandatoryBiomarkers must be a non-empty array")
+
+    min_count = payload.get("minimumRequiredCanonicalBiomarkerCount", 0)
+    if not isinstance(min_count, int) or min_count < 0:
+        raise ValueError("Invalid mandatory biomarker policy: minimumRequiredCanonicalBiomarkerCount must be a non-negative integer")
+
+    required = []
+    for item in required_names:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("Invalid mandatory biomarker policy: each mandatory biomarker must be a non-empty string")
+        required.append({"name": item, "code": biomarker_name_to_code(item)})
+
+    return {
+        "minimum": min_count,
+        "required": required,
+    }
+
+
+def _build_insufficient_data_error(extracted_codes: set[str]) -> str | None:
+    policy = _load_mandatory_policy()
+    missing = [entry["name"] for entry in policy["required"] if entry["code"] not in extracted_codes]
+    present = [entry["name"] for entry in policy["required"] if entry["code"] in extracted_codes]
+    min_required = policy["minimum"]
+
+    if not missing and len(extracted_codes) >= min_required:
+        return None
+
+    payload = {
+        "code": "LAB_REPORT_VALIDATION_INSUFFICIENT_DATA",
+        "message": "Uploaded report is missing mandatory blood biomarkers.",
+        "missingMandatoryBiomarkers": missing,
+        "presentMandatoryBiomarkers": present,
+        "extractedCanonicalBiomarkerCount": len(extracted_codes),
+        "minimumRequiredCanonicalBiomarkerCount": min_required,
+    }
+    return json.dumps(payload, separators=(",", ":"))
 
 
 def _infer_region_from_queue_url(queue_url: str) -> str | None:
@@ -215,42 +284,76 @@ def _update_document_state(engine: Engine, doc_id: str, status: int) -> None:
 
 def _insert_readings(engine: Engine, doc_id: str, user_id: str, rows) -> int:
     observed_at = datetime.now(timezone.utc)
+    created_at = datetime.now(timezone.utc)
 
     insert_query = text(
         """
         INSERT INTO "BiomarkerReadings"
             ("Id", "UserId", "BiomarkerCode", "SourceName", "Value", "Unit",
-             "NormalizedValue", "NormalizedUnit", "ObservedAtUtc", "DocumentId")
+             "NormalizedValue", "NormalizedUnit", "ObservedAtUtc", "DocumentId",
+             "SourceType", "EnteredByUserId", "CreatedAtUtc", "UpdatedAtUtc")
         VALUES
             (:id, :user_id, :code, :source_name, :value, :unit,
-             :normalized_value, :normalized_unit, :observed_at, :document_id)
+             :normalized_value, :normalized_unit, :observed_at, :document_id,
+             :source_type, :entered_by_user_id, :created_at, :updated_at)
         """
     )
 
-    dedupe_query = text(
+    existing_query = text(
         """
-        SELECT 1 FROM "BiomarkerReadings"
+        SELECT "Id" FROM "BiomarkerReadings"
         WHERE "UserId" = :user_id
-          AND "BiomarkerCode" = :code
-          AND "ObservedAtUtc" = :observed_at
           AND "DocumentId" = :document_id
+          AND "BiomarkerCode" = :code
+          AND "SourceType" = :source_type
+        ORDER BY "CreatedAtUtc" DESC
         LIMIT 1
+        """
+    )
+
+    update_query = text(
+        """
+        UPDATE "BiomarkerReadings"
+        SET "SourceName" = :source_name,
+            "Value" = :value,
+            "Unit" = :unit,
+            "NormalizedValue" = :normalized_value,
+            "NormalizedUnit" = :normalized_unit,
+            "ObservedAtUtc" = :observed_at,
+            "UpdatedAtUtc" = :updated_at,
+            "EnteredByUserId" = :entered_by_user_id
+        WHERE "Id" = :id
         """
     )
 
     inserted = 0
     with engine.begin() as conn:
         for row in rows:
-            already = conn.execute(
-                dedupe_query,
+            existing_id = conn.execute(
+                existing_query,
                 {
                     "user_id": user_id,
                     "code": row.biomarker_code,
-                    "observed_at": observed_at,
                     "document_id": doc_id,
+                    "source_type": BIOMARKER_SOURCE_OCR,
                 },
             ).scalar_one_or_none()
-            if already:
+
+            if existing_id:
+                conn.execute(
+                    update_query,
+                    {
+                        "id": existing_id,
+                        "source_name": row.source_name,
+                        "value": row.value,
+                        "unit": row.unit,
+                        "normalized_value": row.normalized_value,
+                        "normalized_unit": row.normalized_unit,
+                        "observed_at": observed_at,
+                        "updated_at": created_at,
+                        "entered_by_user_id": user_id,
+                    },
+                )
                 continue
 
             conn.execute(
@@ -266,11 +369,31 @@ def _insert_readings(engine: Engine, doc_id: str, user_id: str, rows) -> int:
                     "normalized_unit": row.normalized_unit,
                     "observed_at": observed_at,
                     "document_id": doc_id,
+                    "source_type": BIOMARKER_SOURCE_OCR,
+                    "entered_by_user_id": user_id,
+                    "created_at": created_at,
+                    "updated_at": created_at,
                 },
             )
             inserted += 1
 
     return inserted
+
+
+def _load_document_codes(engine: Engine, doc_id: str, user_id: str) -> set[str]:
+    query = text(
+        """
+        SELECT DISTINCT "BiomarkerCode"
+        FROM "BiomarkerReadings"
+        WHERE "DocumentId" = :doc_id
+          AND "UserId" = :user_id
+        """
+    )
+
+    with engine.begin() as conn:
+        rows = conn.execute(query, {"doc_id": doc_id, "user_id": user_id}).scalars().all()
+
+    return {row for row in rows if row}
 
 
 def _process_message(settings: Settings, engine: Engine, sqs, s3, queue_url: str, envelope: QueueEnvelope) -> None:
@@ -284,8 +407,8 @@ def _process_message(settings: Settings, engine: Engine, sqs, s3, queue_url: str
         sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=envelope.receipt_handle)
         return
 
-    _update_job_state(engine, job_id=job_id, status=2)
-    _update_document_state(engine, doc_id=doc_id, status=2)
+    _update_job_state(engine, job_id=job_id, status=JOB_STATUS_PROCESSING)
+    _update_document_state(engine, doc_id=doc_id, status=DOCUMENT_STATUS_PROCESSING)
 
     try:
         doc = _load_document_metadata(engine, doc_id)
@@ -302,15 +425,29 @@ def _process_message(settings: Settings, engine: Engine, sqs, s3, queue_url: str
         )
 
         inserted = _insert_readings(engine, doc_id=doc_id, user_id=user_id, rows=readings)
-        _update_job_state(engine, job_id=job_id, status=3)
-        _update_document_state(engine, doc_id=doc_id, status=3)
+        extracted_codes = _load_document_codes(engine, doc_id=doc_id, user_id=user_id)
+        insufficient_data_error = _build_insufficient_data_error(extracted_codes)
+        if insufficient_data_error:
+            _update_job_state(
+                engine,
+                job_id=job_id,
+                status=JOB_STATUS_INSUFFICIENT_DATA,
+                error=insufficient_data_error,
+            )
+            _update_document_state(engine, doc_id=doc_id, status=DOCUMENT_STATUS_PROCESSED)
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=envelope.receipt_handle)
+            logger.info("Insufficient data doc=%s job=%s readings=%d", doc_id, job_id, inserted)
+            return
+
+        _update_job_state(engine, job_id=job_id, status=JOB_STATUS_SUCCEEDED)
+        _update_document_state(engine, doc_id=doc_id, status=DOCUMENT_STATUS_PROCESSED)
 
         sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=envelope.receipt_handle)
         logger.info("Processed doc=%s job=%s readings=%d", doc_id, job_id, inserted)
 
     except Exception as exc:  # noqa: BLE001
-        _update_job_state(engine, job_id=job_id, status=4, error=str(exc))
-        _update_document_state(engine, doc_id=doc_id, status=4)
+        _update_job_state(engine, job_id=job_id, status=JOB_STATUS_FAILED, error=str(exc))
+        _update_document_state(engine, doc_id=doc_id, status=DOCUMENT_STATUS_FAILED)
         logger.exception("Failed doc=%s job=%s", doc_id, job_id)
 
 

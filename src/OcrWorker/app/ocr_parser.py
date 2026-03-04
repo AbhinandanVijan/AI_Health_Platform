@@ -19,7 +19,7 @@ _MEASUREMENT_PATTERN = re.compile(
 )
 
 _NUMERIC_VALUE_PATTERN = re.compile(r"^-?\d+(?:\.\d+)?$")
-_UNIT_ONLY_PATTERN = re.compile(r"^[A-Za-zµμu×x0-9\^³⁶/%.]+$")
+_UNIT_ONLY_PATTERN = re.compile(r"^[A-Za-zµμu×x0-9\^²³⁶/%.]+$")
 
 _NON_MEASUREMENT_LABELS = {
     "test",
@@ -32,7 +32,43 @@ _NON_MEASUREMENT_LABELS = {
     "age",
     "gender",
     "ordering physician",
+    "category",
+    "flag",
+    "report date",
+    "physician",
+    "specimen type",
 }
+
+_CATEGORY_HINTS = {
+    "hematology",
+    "metabolic",
+    "lipid",
+    "diabetes",
+    "thyroid",
+    "inflammation",
+    "vitamins",
+}
+
+
+def _normalize_ocr_artifacts(line: str) -> str:
+    text = line
+    text = text.replace("µ", "u").replace("μ", "u")
+
+    replacements = {
+        "¾": "^3",
+        "³": "^3",
+        "¼": "^4",
+        "⁴": "^4",
+        "⁶": "^6",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+
+    text = re.sub(r"x\s*10\s*\^\s*(3|4|6)\s*l\b", r"x10^\1/L", text, flags=re.IGNORECASE)
+    text = re.sub(r"x\s*10\s*(3|4|6)\s*l\b", r"x10^\1/L", text, flags=re.IGNORECASE)
+    text = re.sub(r"x\s*10\s*/\s*l\b", "x10/L", text, flags=re.IGNORECASE)
+
+    return text
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
@@ -56,16 +92,25 @@ def _ocr_image(image_bytes: bytes) -> str:
     return pytesseract.image_to_string(image).strip()
 
 
+def _looks_like_pdf(content: bytes) -> bool:
+    return content.lstrip().startswith(b"%PDF-")
+
+
 def extract_text(content: bytes, content_type: str | None, file_name: str | None) -> str:
     name = (file_name or "").lower()
     ctype = (content_type or "").lower()
 
-    is_pdf = "pdf" in ctype or name.endswith(".pdf")
-    if is_pdf:
+    is_pdf_by_metadata = "pdf" in ctype or name.endswith(".pdf")
+    is_pdf_by_bytes = _looks_like_pdf(content)
+
+    if is_pdf_by_bytes:
         text = _extract_pdf_text(content)
         if len(text) >= 100:
             return text
         return _ocr_pdf(content)
+
+    if is_pdf_by_metadata:
+        return _ocr_image(content)
 
     return _ocr_image(content)
 
@@ -74,7 +119,11 @@ def _parse_measurements(lines: Iterable[str]) -> list[NormalizedReading]:
     readings: list[NormalizedReading] = []
     seen: set[tuple[str, Decimal, str]] = set()
 
-    cleaned_lines = [" ".join(line.split()) for line in lines if line.strip()]
+    cleaned_lines = [
+        " ".join(_normalize_ocr_artifacts(line).replace("|", " ").split())
+        for line in lines
+        if line.strip()
+    ]
 
     def _to_decimal(raw: str) -> Decimal | None:
         try:
@@ -84,6 +133,9 @@ def _parse_measurements(lines: Iterable[str]) -> list[NormalizedReading]:
 
     def _is_numeric(raw: str) -> bool:
         return _NUMERIC_VALUE_PATTERN.fullmatch(raw.replace(",", "")) is not None
+
+    def _first_numeric_match(raw: str):
+        return re.search(r"-?\d+(?:\.\d+)?", raw)
 
     def _looks_like_reference_range(raw: str) -> bool:
         lower = raw.lower()
@@ -137,6 +189,69 @@ def _parse_measurements(lines: Iterable[str]) -> list[NormalizedReading]:
             continue
 
         _add_reading(name, value_line, unit_line)
+
+    for index in range(1, len(cleaned_lines) - 2):
+        value_line = cleaned_lines[index]
+        unit_line = cleaned_lines[index + 1]
+        range_line = cleaned_lines[index + 2]
+        name = cleaned_lines[index - 1].strip(" :-")
+
+        if not _is_numeric(value_line):
+            continue
+        if not _looks_like_unit(unit_line):
+            continue
+        if not _looks_like_reference_range(range_line):
+            continue
+        if _is_label(name):
+            continue
+        if name.lower() in _CATEGORY_HINTS:
+            continue
+
+        _add_reading(name, value_line, unit_line)
+
+    for index in range(2, len(cleaned_lines) - 2):
+        category = cleaned_lines[index - 2].strip(" :-").lower()
+        name = cleaned_lines[index - 1].strip(" :-")
+        value_line = cleaned_lines[index]
+        unit_line = cleaned_lines[index + 1]
+        range_line = cleaned_lines[index + 2]
+
+        if category not in _CATEGORY_HINTS:
+            continue
+        if _is_label(name):
+            continue
+        if not _is_numeric(value_line):
+            continue
+        if not _looks_like_unit(unit_line):
+            continue
+        if not _looks_like_reference_range(range_line):
+            continue
+
+        _add_reading(name, value_line, unit_line)
+
+    for clean in cleaned_lines:
+        lowered = clean.lower()
+        if len(clean) < 6:
+            continue
+        if not any(lowered.startswith(f"{hint} ") for hint in _CATEGORY_HINTS):
+            continue
+
+        value_match = _first_numeric_match(clean)
+        if not value_match:
+            continue
+
+        name = clean[: value_match.start()].strip(" :-")
+        if _is_label(name):
+            continue
+
+        raw_value = value_match.group(0)
+        tail = clean[value_match.end():].strip()
+        unit_candidate = tail.split()[0] if tail else ""
+
+        if not _looks_like_unit(unit_candidate):
+            unit_candidate = ""
+
+        _add_reading(name, raw_value, unit_candidate)
 
     return readings
 

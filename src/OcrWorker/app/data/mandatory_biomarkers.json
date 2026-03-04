@@ -1,0 +1,13 @@
+{
+  "minimumRequiredCanonicalBiomarkerCount": 9,
+  "mandatoryBiomarkers": [
+    "Hemoglobin",
+    "WhiteBloodCells",
+    "Platelets",
+    "BloodGlucose",
+    "Creatinine",
+    "TotalCholesterol",
+    "LDLCholesterol",
+    "HDLCholesterol"
+  ]
+}

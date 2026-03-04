@@ -142,6 +142,21 @@ AiHealthPlatform/
 - `POST /api/uploads/reprocess/{docId}`
 - Enqueues a fresh processing job for existing `RawDocument`
 
+Swagger-friendly variant:
+- `POST /api/uploads/reprocess`
+- JSON body:
+
+```json
+{
+    "documentId": "GUID"
+}
+```
+
+### Step 7: Check Upload Processing Status
+- `GET /api/uploads/status/{docId}`
+- Returns document status + latest job status
+- When latest job is `InsufficientData`, response includes `missingMandatoryBiomarkers`
+
 ---
 
 ## 6) Domain Model Reference
@@ -163,6 +178,7 @@ AiHealthPlatform/
 - `2 = Processing`
 - `3 = Succeeded`
 - `4 = Failed`
+- `5 = InsufficientData`
 
 ### 6.4 DocumentStatus
 - `1 = Uploaded`
@@ -216,11 +232,38 @@ SELECT "BiomarkerCode","Value","Unit","NormalizedValue","NormalizedUnit" FROM "B
 Current extraction supports:
 - Single-line measurement patterns
 - Multi-line table patterns (`name -> value -> range -> unit`)
+- Pipe-delimited table rows from OCR/PDF text (for example `| Hematology WBC | 9.1 x109/uL | 4.0-11.0`)
 
 Normalization covers:
 - Canonical biomarker naming (aliases)
 - Unit canonicalization and conversions (selected biomarkers)
 - Unicode/superscript unit cleanup (`µ`, `×`, `³`, `⁶`)
+
+### JSON Configuration Files
+
+The worker uses two JSON files as source of truth:
+
+- `src/OcrWorker/app/data/biomarker.json`
+    - Full biomarker catalog
+    - Per biomarker metadata: `description`, `unit`, `referenceRange`, `aliases`
+    - Used for alias-to-canonical biomarker code mapping during normalization
+
+- `src/OcrWorker/app/data/mandatory_biomarkers.json`
+    - Validation policy for report acceptance
+    - Keys:
+        - `minimumRequiredCanonicalBiomarkerCount`
+        - `mandatoryBiomarkers` (list of canonical biomarker names)
+    - Used by worker to determine `InsufficientData` outcome
+
+### Update Flow for Biomarker Rules
+
+1. Update `biomarker.json` to add/edit biomarker aliases and metadata.
+2. Update `mandatory_biomarkers.json` to change mandatory list or minimum count.
+3. Restart worker container/process.
+4. Validate:
+     - `python3 -m json.tool src/OcrWorker/app/data/biomarker.json`
+     - `python3 -m json.tool src/OcrWorker/app/data/mandatory_biomarkers.json`
+     - `python3 -m py_compile src/OcrWorker/app/worker.py src/OcrWorker/app/normalization.py`
 
 ---
 

@@ -89,3 +89,35 @@
 - **Files Changed:**
   - `.gitignore`
   - `docs/PROBLEMS_AND_RESOLUTIONS.md`
+
+## 2026-03-04 - OCR parser missed category-structured lab report rows
+- **Area:** Worker / OCR Parser
+- **Symptom:** Worker completed with `readings=0` for `labreport1_user.pdf` despite valid tabular lab values.
+- **Root Cause:** Report layout used `Category -> Test -> Value -> Unit -> Reference Range` ordering; parser only supported prior single-line and different multiline sequence patterns.
+- **Resolution:** Extended parser to handle category-based multiline patterns, added additional non-measurement labels, and expanded unit token handling for superscript characters.
+- **Validation:** Parser retest on the same S3 document now returns non-zero readings.
+- **Files Changed:**
+  - `src/OcrWorker/app/ocr_parser.py`
+  - `src/OcrWorker/app/normalization.py`
+  - `docs/PROBLEMS_AND_RESOLUTIONS.md`
+
+## 2026-03-04 - Need Swagger-friendly reprocess request shape
+- **Area:** API / Swagger / DX
+- **Symptom:** Reprocess flow was available via path parameter endpoint only, making request shape less obvious in Swagger for users expecting JSON body requests.
+- **Root Cause:** Existing endpoint exposed `reprocess/{docId}` route but no body-based variant with explicit media-type metadata.
+- **Resolution:** Added `POST /api/uploads/reprocess` accepting `{ documentId }` JSON body and added explicit `Consumes/Produces/ProducesResponseType` metadata for upload endpoints.
+- **Validation:** New endpoint appears in Swagger with request schema and can requeue by document id from request body.
+- **Files Changed:**
+  - `src/Api/Controllers/UploadControlller.cs`
+  - `docs/PROJECT_DOCUMENTATION.md`
+  - `docs/PROBLEMS_AND_RESOLUTIONS.md`
+
+## 2026-03-04 - Mandatory WBC missed for pipe-delimited OCR row
+- **Area:** Worker / OCR Parser / Validation
+- **Symptom:** `GET /api/uploads/status/{docId}` returned `InsufficientData` with `missingMandatoryBiomarkers=["WhiteBloodCells"]` even though report text contained WBC.
+- **Root Cause:** OCR output row format was pipe-delimited (`| Hematology WBC | 9.1 x109/uL | 4.0-11.0`) and parser did not normalize `|` separators before rule-based extraction.
+- **Resolution:** Normalized pipe delimiters to spaces in parser line cleanup path so table rows are parsed by existing measurement rules.
+- **Validation:** Reparse of failing document produced `WHITEBLOODCELLS` with value `9.1 x109/uL`; status moved from `InsufficientData` to `Succeeded` after reprocess.
+- **Files Changed:**
+  - `src/OcrWorker/app/ocr_parser.py`
+  - `docs/PROBLEMS_AND_RESOLUTIONS.md`
