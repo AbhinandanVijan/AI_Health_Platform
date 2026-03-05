@@ -1,5 +1,6 @@
 using System.Text;
 using Api.Auth;
+using Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ using Amazon.S3;
 using Amazon.SQS;
 using Amazon;
 using Microsoft.OpenApi.Models;
+using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,9 +19,25 @@ builder.Configuration.AddInMemoryCollection(LoadDotEnv(dotenvPath));
 builder.Services.AddControllers();  // scope of the controllers is set to "transient", which means a new instance of each controller will be created for every HTTP request. This is the default behavior in ASP.NET Core, and it allows for better performance and scalability, as controllers are lightweight and can be easily instantiated for each request without the overhead of managing their lifecycle.
 builder.Services.AddEndpointsApiExplorer(); // used for Swagger, it discovers API endpoints, and generates metadata for them, which is then used to create interactive API documentation. It allows developers to easily test and understand the API's capabilities through a user-friendly interface provided by Swagger UI.
 
+builder.Services.AddHttpClient<IInsightsGenerationService, OpenAiRagInsightsGenerationService>((sp, client) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var timeout = int.TryParse(config["LLM_TIMEOUT_SECONDS"], out var seconds)
+        ? Math.Clamp(seconds, 10, 180)
+        : 45;
+    client.Timeout = TimeSpan.FromSeconds(timeout);
+});
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new() { Title = "API", Version = "v1" });
+
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+    }
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -60,6 +78,9 @@ builder.Services
     {
         options.Password.RequireDigit = true;
         options.Password.RequiredLength = 8;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireLowercase = false;
         options.User.RequireUniqueEmail = true;
     })
     .AddRoles<IdentityRole>()

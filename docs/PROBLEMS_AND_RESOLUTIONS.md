@@ -121,3 +121,64 @@
 - **Files Changed:**
   - `src/OcrWorker/app/ocr_parser.py`
   - `docs/PROBLEMS_AND_RESOLUTIONS.md`
+
+## 2026-03-05 - UI register failed despite seemingly valid password
+- **Area:** API / Auth / Frontend
+- **Symptom:** Registration failed from UI while similar requests worked from API client tooling.
+- **Root Cause:** ASP.NET Identity default password requirements were stricter than frontend assumptions.
+- **Resolution:** Made password policy explicit in API startup config and surfaced backend validation messages in UI register flow.
+- **Validation:** Registration succeeds with documented policy (`length >= 8` and `digit required`) and UI displays server-side validation details when invalid.
+- **Files Changed:**
+  - `src/Api/Program.cs`
+  - `frontend/src/app/features/auth/login.component.ts`
+
+## 2026-03-05 - Frontend API calls returned 404 during local dev
+- **Area:** Frontend / Dev Proxy
+- **Symptom:** Login from UI hit `/api/auth/login` and returned 404 while backend endpoint was healthy.
+- **Root Cause:** Angular dev server was not consistently running with proxy configuration.
+- **Resolution:** Set default `proxyConfig` in Angular serve options.
+- **Validation:** UI requests route to API host through proxy with no 404 due to dev-server misrouting.
+- **Files Changed:**
+  - `frontend/angular.json`
+  - `frontend/proxy.conf.json`
+
+## 2026-03-05 - Browser upload blocked by S3 CORS preflight
+- **Area:** Upload Flow / Frontend / API
+- **Symptom:** Browser upload hit CORS `403` preflight errors on direct pre-signed S3 PUT flow.
+- **Root Cause:** Browser-to-S3 CORS dependency introduced environment-sensitive preflight failures.
+- **Resolution:** Added authenticated API multipart upload endpoint (`POST /api/uploads/direct`) and switched UI upload path to same-origin API call.
+- **Validation:** Upload and finalize complete through API without browser CORS dependency on S3 bucket policy.
+- **Files Changed:**
+  - `src/Api/Controllers/UploadControlller.cs`
+  - `frontend/src/app/core/services/api.service.ts`
+  - `frontend/src/app/core/models/api.models.ts`
+  - `frontend/src/app/features/uploads/uploads.component.ts`
+
+## 2026-03-05 - Status values shown as numeric enums in UI
+- **Area:** Frontend / UX
+- **Symptom:** Upload and history pages displayed numeric status/type codes, reducing readability.
+- **Root Cause:** UI rendered raw enum integers from API DTOs.
+- **Resolution:** Added enum-to-label mappings for document status, job status, job type, and source type.
+- **Validation:** Upload/history screens now show readable labels (`Succeeded`, `Processing`, `OcrLabPdf`, etc.).
+- **Files Changed:**
+  - `frontend/src/app/features/uploads/uploads.component.ts`
+  - `frontend/src/app/features/history/history.component.ts`
+
+## 2026-03-05 - OCR parsing produced noisy/non-biomarker captures
+- **Area:** Worker / OCR Parser / Normalization
+- **Symptom:** OCR output included noisy tokens (address/date/header fragments) and missed/corrupted biomarker names due to scan artifacts.
+- **Root Cause:** Parser accepted broader text shapes and canonicalization lacked OCR typo tolerance for common report artifacts.
+- **Resolution:** Strengthened row extraction patterns, added OCR typo corrections + fuzzy canonicalization fallback, expanded biomarker aliases, and filtered to known biomarker codes.
+- **Validation:** Parser/compiler checks passed; runtime worker checks confirmed expected canonical mappings and presence of critical markers such as `WHITEBLOODCELLS` on previously problematic documents.
+- **Files Changed:**
+  - `src/OcrWorker/app/ocr_parser.py`
+  - `src/OcrWorker/app/normalization.py`
+  - `src/OcrWorker/app/data/biomarker.json`
+
+## 2026-03-05 - Key Learnings from latest stabilization cycle
+- Keep API-side auth/password rules explicitly configured; do not rely on framework defaults when frontend policy messaging is custom.
+- Treat dev proxy configuration as part of baseline frontend bootstrapping to avoid false API routing failures.
+- Prefer same-origin upload APIs for early-stage product stability; direct browser-to-S3 uploads require strict CORS governance.
+- Always translate backend enum codes into user-facing labels in UI.
+- Improve OCR accuracy through layered defenses: structural parsing, domain lexicon constraints, typo/fuzzy normalization, and explicit noise filtering.
+- Validate OCR changes with both static checks (JSON/syntax compile) and document-level runtime reparse on real uploaded artifacts.

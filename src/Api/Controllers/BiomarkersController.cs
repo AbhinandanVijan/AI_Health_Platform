@@ -44,6 +44,11 @@ public class BiomarkersController : ControllerBase
         IReadOnlyList<string>? MissingMandatoryBiomarkers
     );
 
+    /// <summary>
+    /// Upserts manual biomarker values for a document and recomputes mandatory coverage status.
+    /// </summary>
+    /// <param name="request">Document id and manual biomarker payload.</param>
+    /// <returns>Save result and latest job status after recomputation.</returns>
     [Authorize]
     [HttpPost("manual")]
     [Consumes("application/json")]

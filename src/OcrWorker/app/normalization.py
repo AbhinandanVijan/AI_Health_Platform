@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
@@ -21,6 +22,32 @@ class NormalizedReading:
 
 def _normalize_text(value: str) -> str:
     return " ".join(value.strip().lower().split())
+
+
+_OCR_NAME_CORRECTIONS = {
+    "wec": "wbc",
+    "w8c": "wbc",
+    "her": "hct",
+    "hcr": "hct",
+    "mev": "mcv",
+    "mew": "mcv",
+    "row cv": "rdw cv",
+    "row-cv": "rdw cv",
+    "row sd": "rdw sd",
+    "row-sd": "rdw sd",
+    "it": "plt",
+    "neu%": "neu",
+    "lym%": "lymph",
+    "mon%": "mono",
+    "eos%": "eos",
+    "bas%": "baso",
+    "bas#": "baso",
+}
+
+
+def _apply_ocr_name_corrections(value: str) -> str:
+    corrected = _OCR_NAME_CORRECTIONS.get(value, value)
+    return corrected
 
 
 def _humanize_catalog_key(value: str) -> str:
@@ -116,7 +143,7 @@ def canonicalize_biomarker(name: str) -> str:
 
         return None
 
-    key = _normalize_text(name)
+    key = _apply_ocr_name_corrections(_normalize_text(name))
     matched = _match(key)
     if matched:
         return matched
@@ -134,11 +161,38 @@ def canonicalize_biomarker(name: str) -> str:
     parts = key.split()
     if parts and parts[0] in category_prefixes and len(parts) > 1:
         without_category = " ".join(parts[1:])
+        without_category = _apply_ocr_name_corrections(without_category)
         matched = _match(without_category)
         if matched:
             return matched
 
+    fuzzy_candidate = key
+    if parts and parts[0] in category_prefixes and len(parts) > 1:
+        fuzzy_candidate = " ".join(parts[1:])
+
+    best_alias = None
+    best_score = 0.0
+    for alias, code in _sorted_aliases():
+        if not alias:
+            continue
+
+        if len(alias) <= 2:
+            continue
+
+        score = SequenceMatcher(None, fuzzy_candidate, alias).ratio()
+        threshold = 0.74 if len(fuzzy_candidate) <= 4 else 0.82
+        if score >= threshold and score > best_score:
+            best_score = score
+            best_alias = code
+
+    if best_alias:
+        return best_alias
+
     return biomarker_name_to_code(name)
+
+
+def is_known_biomarker_code(code: str) -> bool:
+    return code in _known_biomarker_codes()
 
 
 def normalize_unit(raw_unit: str) -> str:

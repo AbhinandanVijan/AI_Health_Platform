@@ -1,10 +1,14 @@
 using System;
+using Api.Auth;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Api.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260304103000_RepurposeInsightsTables")]
     public partial class RepurposeInsightsTables : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

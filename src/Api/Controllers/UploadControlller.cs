@@ -5,6 +5,7 @@ using Amazon.SQS.Model;
 using Api.Auth;
 using Api.Domain;
 using Api.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,8 @@ public class UploadsController : ControllerBase
     public record PresignRequest(string FileName, string ContentType, DocumentType DocType);
     public record PresignResponse(string UploadUrl, string Bucket, string ObjectKey, DateTime ExpiresAtUtc);
     public record ReprocessRequest(Guid DocumentId);
+    public record DirectUploadResponse(Guid Id, Guid JobId, string ObjectKey);
+    public record DirectUploadRequest(IFormFile File, DocumentType DocType);
     public record UploadStatusResponse(
         Guid DocumentId,
         DocumentStatus DocumentStatus,
@@ -128,6 +131,64 @@ public class UploadsController : ControllerBase
         long? SizeBytes = null,
         string? Sha256 = null
     );
+
+    [Authorize]
+    [HttpPost("direct")]
+    [Consumes("multipart/form-data")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(DirectUploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [RequestSizeLimit(50_000_000)]
+    public async Task<ActionResult<DirectUploadResponse>> DirectUpload([FromForm] DirectUploadRequest req)
+    {
+        var file = req.File;
+        var docType = req.DocType;
+
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "File is required" });
+
+        var bucket = _cfg["S3_BUCKET"] ?? throw new InvalidOperationException("Missing S3_BUCKET");
+        var safeName = (file.FileName ?? "upload.bin").Replace("..", "").Replace("/", "_").Replace("\\", "_");
+        var prefix = docType switch
+        {
+            DocumentType.LabPdf => "labs",
+            DocumentType.GenomicsVcf => "genomics",
+            _ => "uploads"
+        };
+        var objectKey = $"{prefix}/{UserId}/{Guid.NewGuid()}_{safeName}";
+
+        await using (var stream = file.OpenReadStream())
+        {
+            await _s3.PutObjectAsync(new PutObjectRequest
+            {
+                BucketName = bucket,
+                Key = objectKey,
+                InputStream = stream,
+                ContentType = file.ContentType ?? "application/octet-stream"
+            });
+        }
+
+        var finalize = new FinalizeRequest(
+            ObjectKey: objectKey,
+            FileName: safeName,
+            ContentType: file.ContentType ?? "application/octet-stream",
+            DocType: docType,
+            SizeBytes: file.Length,
+            Sha256: null
+        );
+
+        var result = await Finalize(finalize) as OkObjectResult;
+        if (result?.Value is null)
+            return BadRequest(new { message = "Upload finalized unsuccessfully" });
+
+        var json = JsonSerializer.Serialize(result.Value);
+        using var doc = JsonDocument.Parse(json);
+        var id = doc.RootElement.TryGetProperty("id", out var idNode) ? idNode.GetGuid() : Guid.Empty;
+        var jobId = doc.RootElement.TryGetProperty("jobId", out var jobNode) ? jobNode.GetGuid() : Guid.Empty;
+
+        return Ok(new DirectUploadResponse(id, jobId, objectKey));
+    }
 
     [Authorize]
     [HttpPost("finalize")]

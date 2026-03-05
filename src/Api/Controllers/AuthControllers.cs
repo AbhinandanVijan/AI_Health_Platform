@@ -5,6 +5,7 @@ using Api.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using System.Globalization;
 
 namespace Api.Controllers;
 
@@ -23,20 +24,38 @@ public class AuthController : ControllerBase
         _config = config;
     }
 
-    public record RegisterRequest(string Email, string Password);
+    public record RegisterRequest(string Email, string Password, string? Role);
     public record LoginRequest(string Email, string Password);
+
+    private static readonly HashSet<string> AllowedRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "User",
+        "Clinician",
+        "Admin"
+    };
 
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest req)
     {
+        var selectedRole = string.IsNullOrWhiteSpace(req.Role) ? "User" : NormalizeRole(req.Role);
+        if (!AllowedRoles.Contains(selectedRole))
+        {
+            return BadRequest(new { message = "Role must be one of: User, Clinician, Admin." });
+        }
+
         var user = new AppUser { UserName = req.Email, Email = req.Email };
         var result = await _userManager.CreateAsync(user, req.Password);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
-        // Default role
-        await _userManager.AddToRoleAsync(user, "User");
+        await _userManager.AddToRoleAsync(user, selectedRole);
 
-        return Ok(new { message = "Registered" });
+        return Ok(new { message = "Registered", role = selectedRole });
+    }
+
+    private static string NormalizeRole(string role)
+    {
+        var trimmed = role.Trim();
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(trimmed.ToLowerInvariant());
     }
 
     [HttpPost("login")]

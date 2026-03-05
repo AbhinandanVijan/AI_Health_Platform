@@ -35,9 +35,13 @@ public static class BiomarkerCatalogPolicy
     public static string CanonicalizeBiomarker(string name)
     {
         EnsureLoaded();
+        return CanonicalizeWithAliasIndex(name, _aliasIndex!);
+    }
 
+    private static string CanonicalizeWithAliasIndex(string name, IReadOnlyDictionary<string, string> aliasIndex)
+    {
         var key = NormalizeText(name);
-        var matched = MatchAlias(key);
+        var matched = MatchAlias(aliasIndex, key);
         if (!string.IsNullOrWhiteSpace(matched))
             return matched;
 
@@ -57,7 +61,7 @@ public static class BiomarkerCatalogPolicy
         if (parts.Length > 1 && categoryPrefixes.Contains(parts[0]))
         {
             var withoutCategory = string.Join(' ', parts.Skip(1));
-            matched = MatchAlias(withoutCategory);
+            matched = MatchAlias(aliasIndex, withoutCategory);
             if (!string.IsNullOrWhiteSpace(matched))
                 return matched;
         }
@@ -73,8 +77,6 @@ public static class BiomarkerCatalogPolicy
 
     public static async Task<MandatoryEvaluationResult> EvaluateDocumentAsync(AppDbContext db, string userId, Guid docId)
     {
-        var policy = GetMandatoryPolicy();
-
         var extractedCodes = await db.BiomarkerReadings
             .AsNoTracking()
             .Where(r => r.UserId == userId && r.DocumentId == docId)
@@ -82,7 +84,14 @@ public static class BiomarkerCatalogPolicy
             .Distinct()
             .ToListAsync();
 
-        var extractedSet = new HashSet<string>(extractedCodes, StringComparer.OrdinalIgnoreCase);
+        return EvaluateCodes(extractedCodes);
+    }
+
+    public static MandatoryEvaluationResult EvaluateCodes(IEnumerable<string> extractedCodes)
+    {
+        var policy = GetMandatoryPolicy();
+
+        var extractedSet = new HashSet<string>(extractedCodes ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         var missing = new List<string>();
         var present = new List<string>();
 
@@ -122,9 +131,8 @@ public static class BiomarkerCatalogPolicy
         return JsonSerializer.Serialize(payload);
     }
 
-    private static string? MatchAlias(string candidate)
+    private static string? MatchAlias(IReadOnlyDictionary<string, string> aliases, string candidate)
     {
-        var aliases = _aliasIndex!;
         if (aliases.TryGetValue(candidate, out var exact))
             return exact;
 
@@ -238,7 +246,7 @@ public static class BiomarkerCatalogPolicy
                 .ToList();
 
             var nameToCode = mandatoryNames
-                .ToDictionary(name => name, CanonicalizeBiomarker, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(name => name, name => CanonicalizeWithAliasIndex(name, aliasIndex), StringComparer.OrdinalIgnoreCase);
 
             var mandatoryCodes = new HashSet<string>(nameToCode.Values, StringComparer.OrdinalIgnoreCase);
 

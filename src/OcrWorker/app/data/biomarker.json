@@ -9,7 +9,7 @@
     "description": "White blood cells (WBCs) are an integral part of the immune system, helping the body fight infections, inflammation, and foreign invaders. Abnormal WBC counts can indicate conditions such as infections, stress, inflammation, or immune system disorders.",
     "unit": "cmm",
     "referenceRange": { "min": 4000, "max": 11000 },
-    "aliases": ["WBC", "Total WBC count"]
+    "aliases": ["WBC", "Total WBC count", "WEC", "W8C"]
   },
   "Platelets": {
     "description": "Platelets, also known as thrombocytes, are tiny blood cells that help your body form clots to stop bleeding. Low platelet counts may result in excessive bleeding, while high counts can lead to clotting disorders.",
@@ -27,13 +27,13 @@
     "description": "PCV measures the proportion of blood volume occupied by red blood cells. High PCV may indicate dehydration, while low PCV can suggest anemia.",
     "unit": "%",
     "referenceRange": { "min": 40, "max": 50 },
-    "aliases": ["PCV", "Hematocrit"]
+    "aliases": ["PCV", "Hematocrit", "HCT", "HCT%"]
   },
   "Mean Corpuscular Volume (MCV)": {
     "description": "MCV measures the average volume of red blood cells. High values indicate macrocytosis, while low values suggest microcytosis.",
     "unit": "fL",
     "referenceRange": { "min": 83, "max": 101 },
-    "aliases": ["MCV"]
+    "aliases": ["MCV", "MEV", "MEW"]
   },
   "Mean Corpuscular Hemoglobin (MCH)": {
     "description": "MCH indicates the average amount of hemoglobin per red blood cell. Abnormal values may signal anemia.",
@@ -51,37 +51,37 @@
     "description": "RDW indicates the variation in red blood cell size. High RDW may suggest mixed anemia types.",
     "unit": "%",
     "referenceRange": { "min": 11.6, "max": 14.0 },
-    "aliases": ["RDW"]
+    "aliases": ["RDW", "RDW-CV", "RDW CV", "RDW-SD", "RDW SD", "ROW-CV", "ROW CV", "ROW-SD", "ROW SD"]
   },
   "Neutrophils": {
     "description": "Neutrophils are a type of white blood cell that fight infections caused by bacteria and fungi. Abnormal neutrophil counts may indicate infections, inflammation, or immune system disorders.",
     "unit": "%",
     "referenceRange": { "min": 40, "max": 60 },
-    "aliases": ["Neu"]
+    "aliases": ["Neu", "NEU", "NEU%"]
   },
   "Lymphocytes": {
     "description": "Lymphocytes are white blood cells that play a key role in immune responses against viruses and bacteria. High counts may indicate infections or autoimmune diseases, while low counts may result from immune suppression.",
     "unit": "%",
     "referenceRange": { "min": 20, "max": 40 },
-    "aliases": ["Lymph"]
+    "aliases": ["Lymph", "LYM", "LYM%"]
   },
   "Monocytes": {
     "description": "Monocytes are white blood cells that engulf and digest pathogens and debris. Elevated levels may indicate chronic inflammation or infection.",
     "unit": "%",
     "referenceRange": { "min": 2, "max": 8 },
-    "aliases": ["Mono"]
+    "aliases": ["Mono", "MON", "MON%"]
   },
   "Eosinophils": {
     "description": "Eosinophils are involved in allergic reactions and the body's response to parasitic infections. High counts may indicate allergies or parasitic infections.",
     "unit": "%",
     "referenceRange": { "min": 1, "max": 4 },
-    "aliases": ["Eos"]
+    "aliases": ["Eos", "EOS", "EOS%", "ME"]
   },
   "Basophils": {
     "description": "Basophils are white blood cells involved in allergic reactions and inflammation. Elevated basophil counts may indicate allergies, chronic inflammation, or certain blood disorders.",
     "unit": "%",
     "referenceRange": { "min": 0, "max": 2 },
-    "aliases": ["Baso"]
+    "aliases": ["Baso", "BAS", "BAS%", "BASO%", "RAR AL"]
   },
   "SerumIron": {
     "description": "Serum iron measures the amount of iron circulating in the blood. Iron is essential for producing hemoglobin and supporting oxygen transport. Low levels can indicate iron deficiency anemia, while high levels may suggest iron overload conditions like hemochromatosis.",

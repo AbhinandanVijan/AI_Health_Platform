@@ -10,11 +10,18 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 from pypdf import PdfReader
 
-from app.normalization import NormalizedReading, normalize_reading
+from app.normalization import NormalizedReading, is_known_biomarker_code, normalize_reading
 
 
 _MEASUREMENT_PATTERN = re.compile(
     r"(?P<name>[A-Za-z][A-Za-z0-9\s\-_/()%]+?)\s{1,}(?P<value>-?\d+(?:\.\d+)?)\s*(?P<unit>%|[A-Za-z0-9\^/\.]+)",
+    re.IGNORECASE,
+)
+
+_TABLE_ROW_PATTERN = re.compile(
+    r"^(?P<name>[A-Za-z#%()\-\s]+?)\s+(?P<value>-?\d+(?:\.\d+)?)\s+"
+    r"(?:(?:\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?)|(?:up\s*to\s*\d+(?:\.\d+)?)|(?:upto\s*\d+(?:\.\d+)?))"
+    r"\s+(?P<unit>%|[A-Za-z0-9\^/\.]+)$",
     re.IGNORECASE,
 )
 
@@ -148,11 +155,26 @@ def _parse_measurements(lines: Iterable[str]) -> list[NormalizedReading]:
     def _is_label(raw: str) -> bool:
         return raw.strip().lower().rstrip(":") in _NON_MEASUREMENT_LABELS
 
+    def _looks_like_name(raw: str) -> bool:
+        candidate = raw.strip().strip(":")
+        if len(candidate) < 2:
+            return False
+        if any(ch.isdigit() for ch in candidate):
+            return False
+        return bool(re.fullmatch(r"[A-Za-z#%()\-\s]+", candidate))
+
     def _add_reading(name: str, raw_value: str, unit: str) -> None:
+        if _is_label(name):
+            return
+        if not _looks_like_name(name):
+            return
+
         value = _to_decimal(raw_value)
         if value is None:
             return
         normalized = normalize_reading(name, value, unit)
+        if not is_known_biomarker_code(normalized.biomarker_code):
+            return
         key = (normalized.biomarker_code, normalized.value, normalized.unit)
         if key in seen:
             return
@@ -161,6 +183,14 @@ def _parse_measurements(lines: Iterable[str]) -> list[NormalizedReading]:
 
     for clean in cleaned_lines:
         if len(clean) < 4:
+            continue
+
+        table_row = _TABLE_ROW_PATTERN.match(clean)
+        if table_row:
+            name = table_row.group("name").strip(" :-")
+            raw_value = table_row.group("value")
+            unit = table_row.group("unit")
+            _add_reading(name, raw_value, unit)
             continue
 
         match = _MEASUREMENT_PATTERN.search(clean)

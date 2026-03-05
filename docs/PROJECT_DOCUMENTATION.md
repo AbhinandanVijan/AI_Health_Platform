@@ -157,6 +157,15 @@ Swagger-friendly variant:
 - Returns document status + latest job status
 - When latest job is `InsufficientData`, response includes `missingMandatoryBiomarkers`
 
+### Step 8: Generate AI Insights (LLM + RAG)
+- `POST /api/insights/generate/{docId}`
+- Generates a document-scoped score snapshot and recommendations
+- Uses deterministic scoring + LLM narrative generation grounded with retrieval context
+
+### Step 9: Fetch Latest AI Insights
+- `GET /api/insights/{docId}`
+- Returns latest score snapshot and generated recommendations for the document
+
 ---
 
 ## 6) Domain Model Reference
@@ -197,11 +206,24 @@ Important values:
 - Auth: `JWT_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE`
 - AWS: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
 - Storage/Queue: `S3_BUCKET`, `SQS_QUEUE_URL`
+- LLM: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`
+- RAG: `RAG_MAX_CHUNKS`
 
 Notes:
 - API/worker in Docker should use `CONNSTR_DOCKER` (`Host=db;Port=5432;...`)
 - Local clients (pgAdmin) use mapped host port (for example `localhost:5433` if remapped)
 - S3 and SQS region must match actual resource regions
+- LLM endpoint must be OpenAI-compatible (`POST /v1/chat/completions`)
+
+Example `.env` entries for insights generation:
+
+```env
+LLM_BASE_URL=https://api.openai.com
+LLM_API_KEY=your_api_key
+LLM_MODEL=gpt-4.1-mini
+LLM_TIMEOUT_SECONDS=45
+RAG_MAX_CHUNKS=12
+```
 
 ---
 
@@ -273,10 +295,57 @@ The worker uses two JSON files as source of truth:
 - Parser currently rule-based (no ML document layout model yet)
 - Readings dedupe is basic and can be expanded with stronger constraints
 - API finalize error handling can be improved for cleaner downstream retry semantics
+- Insights generation currently uses lightweight retrieval from biomarker catalog/policy (replace with vector store for richer RAG)
+- Risk scoring remains deterministic baseline; add medical-grade risk models before clinical use
 
 ---
 
-## 11) Change Log Practice
+## 11) Insights API Details
+
+### 11.1 Generate Insights
+
+- `POST /api/insights/generate/{docId}`
+- Auth required (Bearer JWT)
+- Validates document ownership
+- Requires biomarker data already present for the document
+- Returns `503` if LLM configuration is missing or provider is unavailable
+
+Example response fields:
+- `documentId`
+- `snapshotId`
+- `overallScore`
+- `confidence`
+- `riskBand`
+- `modelVersion`
+- `breakdownJson`
+- `recommendations[]`
+
+### 11.2 Get Latest Insights
+
+- `GET /api/insights/{docId}`
+- Auth required (Bearer JWT)
+- Returns latest snapshot for the document and linked recommendations
+
+### 11.3 Recommendation Types
+
+- `Insight`
+- `RiskPrediction`
+- `Action`
+
+### 11.4 Generation Pipeline
+
+1. Load document biomarkers from DB.
+2. Compute deterministic baseline score/risk band.
+3. Build retrieval context (RAG chunks) from:
+    - mandatory biomarker policy
+    - biomarker catalog metadata for present biomarkers
+4. Call configured LLM with structured prompt.
+5. Parse strict JSON recommendations and persist to `Recommendations`.
+6. Persist score metadata to `ScoreSnapshots`.
+
+---
+
+## 12) Change Log Practice
 
 All incidents/fixes should be appended in:
 - `docs/PROBLEMS_AND_RESOLUTIONS.md`
@@ -285,3 +354,44 @@ Expected update policy:
 - Add one new entry per issue/fix
 - Include symptom, root cause, resolution, and validation evidence
 - Keep entries chronological (latest first)
+
+---
+
+## 13) Recent Fixes and Learnings (2026-03-05)
+
+### 13.1 Stabilization Fixes Implemented
+
+- Auth/register reliability
+    - Explicitly configured ASP.NET Identity password policy to match product expectations.
+    - Frontend register flow now surfaces backend validation details for faster user correction.
+
+- Frontend-to-API routing reliability in local development
+    - Angular dev server now defaults to API proxy config (`/api` -> backend host), preventing false 404 errors.
+
+- Upload reliability (CORS hardening)
+    - Added same-origin direct upload endpoint: `POST /api/uploads/direct`.
+    - Frontend upload flow switched from browser pre-signed S3 PUT to API-mediated multipart upload to remove browser preflight dependency on bucket CORS.
+
+- UX readability improvements
+    - Upload/history views now map enum numeric values to human-readable labels for status/type/source fields.
+
+- OCR quality hardening
+    - Improved parser row extraction constraints.
+    - Added OCR typo correction and fuzzy canonicalization support in normalization.
+    - Expanded biomarker alias coverage for common OCR artifacts.
+    - Filtered extracted rows to known biomarker codes to reduce noisy captures.
+
+### 13.2 Operational Learnings
+
+- Define security and validation policies explicitly in backend config; defaults can drift from UI assumptions.
+- Include proxy setup in frontend baseline config to avoid environment-specific API routing regressions.
+- For MVP/early production reliability, same-origin upload endpoints are often more stable than direct browser-to-object-store flows.
+- Convert technical enum codes to user-facing labels at the UI boundary.
+- OCR accuracy improves most when combining structural parsing, domain lexicon constraints, typo tolerance, and real-document regression checks.
+
+### 13.3 Verification Signals Used
+
+- API build success (`dotnet build src/Api/Api.csproj`).
+- Worker syntax/config checks (`python3 -m py_compile`, JSON validation).
+- Worker runtime parsing checks against stored documents via `docker compose exec ocr-worker ...`.
+- Frontend production build success (`npm run build`).
