@@ -2,6 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
 import { LoginRequest, LoginResponse, MeResponse, RegisterRequest } from '../models/api.models';
+import { buildApiUrl } from '../config/api.config';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -23,17 +24,17 @@ export class AuthService {
   }
 
   login(payload: LoginRequest): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/auth/login', payload).pipe(
+    return this.http.post<LoginResponse>(buildApiUrl('/api/auth/login'), payload).pipe(
       tap((res) => localStorage.setItem(this.tokenKey, res.token))
     );
   }
 
   register(payload: RegisterRequest): Observable<unknown> {
-    return this.http.post('/api/auth/register', payload);
+    return this.http.post(buildApiUrl('/api/auth/register'), payload);
   }
 
   loadMe(): Observable<MeResponse> {
-    return this.http.get<MeResponse>('/api/me').pipe(
+    return this.http.get<MeResponse>(buildApiUrl('/api/me')).pipe(
       tap((me) => this.meSignal.set(me))
     );
   }

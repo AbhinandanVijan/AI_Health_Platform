@@ -20,6 +20,7 @@ import {
   TrackedDocument,
   UploadStatusResponse,
 } from '../models/api.models';
+import { buildApiUrl } from '../config/api.config';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -28,18 +29,18 @@ export class ApiService {
   constructor(private readonly http: HttpClient) {}
 
   presign(payload: PresignRequest): Observable<PresignResponse> {
-    return this.http.post<PresignResponse>('/api/uploads/presign', payload);
+    return this.http.post<PresignResponse>(buildApiUrl('/api/uploads/presign'), payload);
   }
 
   directUpload(file: File, docType: number): Observable<DirectUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('docType', String(docType));
-    return this.http.post<DirectUploadResponse>('/api/uploads/direct', formData);
+    return this.http.post<DirectUploadResponse>(buildApiUrl('/api/uploads/direct'), formData);
   }
 
   finalize(payload: FinalizeRequest): Observable<FinalizeResponse> {
-    return this.http.post<FinalizeResponse>('/api/uploads/finalize', payload);
+    return this.http.post<FinalizeResponse>(buildApiUrl('/api/uploads/finalize'), payload);
   }
 
   uploadToPresignedUrl(url: string, file: File): Observable<void> {
@@ -63,63 +64,63 @@ export class ApiService {
   }
 
   getUploadStatus(docId: string): Observable<UploadStatusResponse> {
-    return this.http.get<UploadStatusResponse>(`/api/uploads/status/${docId}`);
+    return this.http.get<UploadStatusResponse>(buildApiUrl(`/api/uploads/status/${docId}`));
   }
 
   reprocess(docId: string): Observable<unknown> {
-    return this.http.post(`/api/uploads/reprocess/${docId}`, {});
+    return this.http.post(buildApiUrl(`/api/uploads/reprocess/${docId}`), {});
   }
 
   upsertManualBiomarkers(payload: ManualBiomarkersRequest): Observable<ManualBiomarkersResponse> {
-    return this.http.post<ManualBiomarkersResponse>('/api/biomarkers/manual', payload);
+    return this.http.post<ManualBiomarkersResponse>(buildApiUrl('/api/biomarkers/manual'), payload);
   }
 
   getAggregateInsights(): Observable<InsightSnapshotResponse> {
-    return this.http.get<InsightSnapshotResponse>('/api/insights/latest');
+    return this.http.get<InsightSnapshotResponse>(buildApiUrl('/api/insights/latest'));
   }
 
   generateAggregateInsights(): Observable<InsightSnapshotResponse> {
-    return this.http.post<InsightSnapshotResponse>('/api/insights/generate', {});
+    return this.http.post<InsightSnapshotResponse>(buildApiUrl('/api/insights/generate'), {});
   }
 
   getDocumentInsights(docId: string): Observable<InsightSnapshotResponse> {
-    return this.http.get<InsightSnapshotResponse>(`/api/insights/${docId}`);
+    return this.http.get<InsightSnapshotResponse>(buildApiUrl(`/api/insights/${docId}`));
   }
 
   generateDocumentInsights(docId: string): Observable<InsightSnapshotResponse> {
-    return this.http.post<InsightSnapshotResponse>(`/api/insights/generate/${docId}`, {});
+    return this.http.post<InsightSnapshotResponse>(buildApiUrl(`/api/insights/generate/${docId}`), {});
   }
 
   requestRecommendationReview(recommendationId: string): Observable<InsightRecommendation> {
-    return this.http.post<InsightRecommendation>(`/api/insights/recommendations/${recommendationId}/request-review`, {});
+    return this.http.post<InsightRecommendation>(buildApiUrl(`/api/insights/recommendations/${recommendationId}/request-review`), {});
   }
 
   approveRecommendation(recommendationId: string): Observable<InsightRecommendation> {
-    return this.http.post<InsightRecommendation>(`/api/insights/recommendations/${recommendationId}/approve`, {});
+    return this.http.post<InsightRecommendation>(buildApiUrl(`/api/insights/recommendations/${recommendationId}/approve`), {});
   }
 
   getPendingRecommendationReviews(skip = 0, take = 50): Observable<ClinicianRecommendationQueueItem[]> {
-    return this.http.get<ClinicianRecommendationQueueItem[]>(`/api/insights/recommendations/pending?skip=${skip}&take=${take}`);
+    return this.http.get<ClinicianRecommendationQueueItem[]>(buildApiUrl(`/api/insights/recommendations/pending?skip=${skip}&take=${take}`));
   }
 
   getHistoryDocuments(skip = 0, take = 20): Observable<DocumentHistoryItem[]> {
-    return this.http.get<DocumentHistoryItem[]>(`/api/history/documents?skip=${skip}&take=${take}`);
+    return this.http.get<DocumentHistoryItem[]>(buildApiUrl(`/api/history/documents?skip=${skip}&take=${take}`));
   }
 
   getDocumentBiomarkers(docId: string): Observable<BiomarkerHistoryItem[]> {
-    return this.http.get<BiomarkerHistoryItem[]>(`/api/history/documents/${docId}/biomarkers`);
+    return this.http.get<BiomarkerHistoryItem[]>(buildApiUrl(`/api/history/documents/${docId}/biomarkers`));
   }
 
   getDocumentJobs(docId: string): Observable<JobHistoryItem[]> {
-    return this.http.get<JobHistoryItem[]>(`/api/history/documents/${docId}/jobs`);
+    return this.http.get<JobHistoryItem[]>(buildApiUrl(`/api/history/documents/${docId}/jobs`));
   }
 
   getBiomarkerFeed(skip = 0, take = 50): Observable<BiomarkerHistoryItem[]> {
-    return this.http.get<BiomarkerHistoryItem[]>(`/api/history/biomarkers?skip=${skip}&take=${take}`);
+    return this.http.get<BiomarkerHistoryItem[]>(buildApiUrl(`/api/history/biomarkers?skip=${skip}&take=${take}`));
   }
 
   getInsightHistory(skip = 0, take = 20): Observable<InsightHistoryItem[]> {
-    return this.http.get<InsightHistoryItem[]>(`/api/history/insights?skip=${skip}&take=${take}`);
+    return this.http.get<InsightHistoryItem[]>(buildApiUrl(`/api/history/insights?skip=${skip}&take=${take}`));
   }
 
   parseInsufficientError(raw: string | undefined): ParsedInsufficientError | null {

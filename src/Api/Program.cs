@@ -151,6 +151,28 @@ builder.Services.AddSingleton<IAmazonSQS>(_ =>
 
 builder.Services.AddAuthorization();
 
+var corsAllowedOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendCors", policy =>
+    {
+        if (corsAllowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(corsAllowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+            return;
+        }
+
+        // Fallback for first-time deployments when an explicit origin is not set yet.
+        policy.AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -163,10 +185,13 @@ await RoleSeeder.SeedAsync(app.Services);
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseCors("FrontendCors");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapGet("/health", () => Results.Ok(new { status = "ok", utc = DateTime.UtcNow }));
 
 app.Run();
 

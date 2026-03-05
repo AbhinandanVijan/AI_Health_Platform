@@ -1,0 +1,49 @@
+services:
+  api-gateway:
+    image: nginx:1.27-alpine
+    container_name: aihealth-api-gateway
+    depends_on:
+      - api
+    volumes:
+      - ./deploy/nginx/api-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Api/Dockerfile
+    container_name: aihealth-api
+    env_file: .env.aws
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: ${CONNSTR_RDS}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS}
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  ocr-worker:
+    build:
+      context: .
+      dockerfile: src/OcrWorker/Dockerfile
+    container_name: aihealth-ocr-worker
+    env_file: .env.aws
+    environment:
+      CONNSTR_DOCKER: ${CONNSTR_RDS}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL}
+      OCR_POLL_WAIT_SECONDS: ${OCR_POLL_WAIT_SECONDS}
+      OCR_LOOP_SLEEP_SECONDS: ${OCR_LOOP_SLEEP_SECONDS}
+    restart: unless-stopped
