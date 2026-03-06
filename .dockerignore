@@ -1,0 +1,30 @@
+# Frontend — not needed for backend image
+frontend/
+
+# Git
+.git/
+.github/
+
+# Docs
+docs/
+README.md
+
+# Env files with secrets
+.env
+.env.*
+!.env.example
+
+# Build outputs (local dev)
+src/Api/bin/
+src/Api/obj/
+src/OcrWorker/__pycache__/
+src/OcrWorker/app/__pycache__/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Docker artefacts
+docker-compose*.yml
+deploy/

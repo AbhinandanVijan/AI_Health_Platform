@@ -106,8 +106,24 @@ jobs:
             git fetch --all
             git checkout main
             git pull origin main
-            docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
+            docker compose --env-file .env.aws -f docker-compose.aws.yml build --no-cache api
+            docker compose --env-file .env.aws -f docker-compose.aws.yml up -d
             docker compose --env-file .env.aws -f docker-compose.aws.yml ps
-            curl -fsS http://localhost/health > /dev/null
+
+            echo 'Waiting for API health check...'
+            MAX_RETRIES=24
+            SLEEP_SECS=5
+            n=0
+            until curl -fsS http://localhost/health > /dev/null 2>&1; do
+              n=\$((n+1))
+              if [ \$n -ge \$MAX_RETRIES ]; then
+                echo 'Health check timed out after 120s. Container logs:'
+                docker compose --env-file .env.aws -f docker-compose.aws.yml logs --tail=50 api
+                exit 1
+              fi
+              echo \"  attempt \$n/\$MAX_RETRIES — waiting \${SLEEP_SECS}s...\"
+              sleep \$SLEEP_SECS
+            done
+
             echo Backend deploy completed and health check passed.
           "
