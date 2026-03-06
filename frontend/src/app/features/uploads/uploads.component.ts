@@ -71,13 +71,17 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Unit</mat-label>
-              <input matInput formControlName="unit" />
+              <mat-select formControlName="unit">
+                <mat-option *ngFor="let unit of standardUnits" [value]="unit">{{ unit }}</mat-option>
+              </mat-select>
             </mat-form-field>
             <button mat-button color="warn" type="button" (click)="removeRow(i)">Remove</button>
           </div>
         </div>
-        <button mat-button type="button" (click)="addRow()">Add biomarker</button>
-        <button mat-flat-button color="primary" type="submit">Save manual biomarkers</button>
+        <div class="manual-actions">
+          <button mat-stroked-button color="primary" class="manual-action-button" type="button" (click)="addRow()">Add biomarker</button>
+          <button mat-flat-button color="primary" class="manual-action-button" type="submit">Save manual biomarkers</button>
+        </div>
       </form>
     </mat-card>
   `,
@@ -89,6 +93,8 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
       .error { color: #b00020; }
       .manual-rows { display: grid; gap: 10px; }
       .manual-row { display: grid; grid-template-columns: 1fr 120px 120px auto; gap: 8px; align-items: center; }
+      .manual-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+      .manual-action-button { min-height: 40px; min-width: 180px; }
       @media (max-width: 900px) { .manual-row { grid-template-columns: 1fr; } }
     `,
   ],
@@ -102,6 +108,18 @@ export class UploadsComponent implements OnDestroy {
   protected readonly status = signal<UploadStatusResponse | null>(null);
   protected readonly insufficientError = signal<ParsedInsufficientError | null>(null);
   protected readonly info = signal('');
+  protected readonly standardUnits = [
+    'mg/dL',
+    'g/dL',
+    'mmol/L',
+    'IU/L',
+    'U/L',
+    'ng/mL',
+    'pg/mL',
+    '%',
+    'mEq/L',
+    'cells/uL',
+  ];
 
   protected readonly manualForm;
   private pollSub?: Subscription;

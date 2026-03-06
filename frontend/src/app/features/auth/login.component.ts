@@ -27,24 +27,24 @@ import { AuthService } from '../../core/services/auth.service';
   template: `
     <div class="auth-page">
       <mat-card class="auth-card">
-        <h2>AI Health Platform</h2>
+        <h2 class="auth-title">AI Health Platform</h2>
         <p>Login or register to manage your lab reports and insights.</p>
 
         <mat-tab-group>
           <mat-tab label="Login">
             <form [formGroup]="loginForm" (ngSubmit)="login()" class="auth-form">
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" class="auth-field" subscriptSizing="dynamic">
                 <mat-label>Email</mat-label>
                 <input matInput formControlName="email" type="email" />
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" class="auth-field" subscriptSizing="dynamic">
                 <mat-label>Password</mat-label>
                 <input matInput formControlName="password" type="password" />
                 <mat-hint>At least 8 characters and 1 digit.</mat-hint>
               </mat-form-field>
 
-              <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+              <button mat-flat-button color="primary" type="submit" class="auth-submit" [disabled]="loading()">
                 {{ loading() ? 'Signing in...' : 'Sign in' }}
               </button>
             </form>
@@ -52,18 +52,18 @@ import { AuthService } from '../../core/services/auth.service';
 
           <mat-tab label="Register">
             <form [formGroup]="registerForm" (ngSubmit)="register()" class="auth-form">
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" class="auth-field" subscriptSizing="dynamic">
                 <mat-label>Email</mat-label>
                 <input matInput formControlName="email" type="email" />
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" class="auth-field" subscriptSizing="dynamic">
                 <mat-label>Password</mat-label>
                 <input matInput formControlName="password" type="password" />
                 <mat-hint>At least 8 characters and 1 digit.</mat-hint>
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" class="auth-field" subscriptSizing="dynamic">
                 <mat-label>User type</mat-label>
                 <mat-select formControlName="role">
                   <mat-option value="User">User (standard)</mat-option>
@@ -73,7 +73,7 @@ import { AuthService } from '../../core/services/auth.service';
                 <mat-hint>Select the account type to register.</mat-hint>
               </mat-form-field>
 
-              <button mat-flat-button color="primary" type="submit" [disabled]="loading()">
+              <button mat-flat-button color="primary" type="submit" class="auth-submit" [disabled]="loading()">
                 {{ loading() ? 'Creating account...' : 'Create account' }}
               </button>
             </form>
@@ -87,8 +87,11 @@ import { AuthService } from '../../core/services/auth.service';
   styles: [
     `
       .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
-      .auth-card { width: 100%; max-width: 460px; }
-      .auth-form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+      .auth-card { width: 100%; max-width: 430px; }
+      .auth-title { text-align: center; margin-bottom: 8px; }
+      .auth-form { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; }
+      .auth-field { width: 100%; max-width: 320px; }
+      .auth-submit { width: 100%; max-width: 320px; min-height: 40px; }
       .error { color: #b00020; margin-top: 12px; }
     `,
   ],

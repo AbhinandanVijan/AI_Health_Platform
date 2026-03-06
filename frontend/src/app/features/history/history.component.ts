@@ -51,6 +51,7 @@ import {
             <p>{{ rec.content }}</p>
             <button
               mat-stroked-button
+              color="primary"
               *ngIf="canRequestReview(rec)"
               (click)="requestReview(rec.id)"
               [disabled]="requestingReviewIds().has(rec.id)">

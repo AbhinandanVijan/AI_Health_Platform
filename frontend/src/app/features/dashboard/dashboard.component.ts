@@ -45,6 +45,7 @@ import { InsightRecommendation, InsightSnapshotResponse } from '../../core/model
             <p>{{ r.content }}</p>
             <button
               mat-stroked-button
+              color="primary"
               *ngIf="canRequestReview(r)"
               (click)="requestReview(r.id)"
               [disabled]="requestingReviewIds().has(r.id)">
