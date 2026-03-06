@@ -27,6 +27,10 @@ jobs:
           test -n "${{ secrets.EC2_HOST }}" || (echo "Missing secret: EC2_HOST" && exit 1)
           test -n "${{ secrets.EC2_USER }}" || (echo "Missing secret: EC2_USER" && exit 1)
           test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "Missing secret: EC2_SSH_KEY" && exit 1)
+          if [[ "${{ secrets.EC2_HOST }}" == http* ]]; then
+            echo "EC2_HOST should be hostname or IP only (no http:// or https://)."
+            exit 1
+          fi
 
       - name: Configure SSH key
         run: |
@@ -35,7 +39,8 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          touch ~/.ssh/known_hosts
+          ssh-keyscan -T 10 -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts || echo "ssh-keyscan failed; proceeding with StrictHostKeyChecking=accept-new"
 
       - name: Deploy on EC2 over SSH
         env:
@@ -50,7 +55,7 @@ jobs:
             APP_PATH='~/AI_Health_Platform'
           fi
 
-          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" "
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" "
             set -euo pipefail
             cd '$APP_PATH'
             git fetch --all
