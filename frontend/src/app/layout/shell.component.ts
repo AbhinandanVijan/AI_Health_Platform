@@ -40,6 +40,7 @@ import { AuthService } from '../core/services/auth.service';
             <a mat-list-item routerLink="/dashboard" routerLinkActive="active-link">Dashboard</a>
             <a mat-list-item routerLink="/uploads" routerLinkActive="active-link">Uploads & Status</a>
             <a mat-list-item routerLink="/history" routerLinkActive="active-link">My History</a>
+            <a mat-list-item routerLink="/profile" routerLinkActive="active-link">My Profile</a>
           </ng-container>
         </mat-nav-list>
       </mat-sidenav>

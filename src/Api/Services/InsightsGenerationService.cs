@@ -6,6 +6,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Api.Services;
 
+public sealed record UserProfileContext(
+    int? Age,
+    string? BiologicalSex,
+    bool? IsSmoker,
+    bool? IsDiabetic,
+    bool? IsHypertensive,
+    decimal? Bmi,
+    string? ActivityLevel
+);
+
 public sealed record InsightGenerationContext(
     Guid DocumentId,
     string UserId,
@@ -13,7 +23,8 @@ public sealed record InsightGenerationContext(
     decimal Confidence,
     RiskBand RiskBand,
     MandatoryEvaluationResult MandatoryEvaluation,
-    IReadOnlyList<BiomarkerReading> Biomarkers
+    IReadOnlyList<BiomarkerReading> Biomarkers,
+    UserProfileContext? UserProfile = null
 );
 
 public sealed record GeneratedInsightItem(
@@ -79,6 +90,7 @@ public sealed class OpenAiRagInsightsGenerationService : IInsightsGenerationServ
             overallScore = context.OverallScore,
             confidence = context.Confidence,
             riskBand = context.RiskBand.ToString(),
+            patientContext = BuildPatientContext(context.UserProfile),
             mandatoryEvaluation = new
             {
                 context.MandatoryEvaluation.IsSufficient,
@@ -102,6 +114,7 @@ Rules:
 5) Return strict JSON object with key `recommendations`.
 6) `recommendations` must contain 3-6 items across types: Insight, RiskPrediction, Action.
 7) Each item requires: type, priority (1-5), title, content, evidence (array of sourceId strings).
+8) If patientContext is present, adjust risk thresholds, reference ranges, and clinical priorities accordingly.
 """;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/v1/chat/completions");
@@ -183,6 +196,27 @@ Rules:
             throw new InvalidOperationException("LLM returned no valid recommendations.");
 
         return items;
+    }
+
+    private static string? BuildPatientContext(UserProfileContext? profile)
+    {
+        if (profile is null) return null;
+        var parts = new List<string>();
+        if (profile.Age.HasValue)
+            parts.Add($"{profile.Age.Value}-year-old");
+        if (!string.IsNullOrWhiteSpace(profile.BiologicalSex))
+            parts.Add(profile.BiologicalSex.ToLower());
+        var conditions = new List<string>();
+        if (profile.IsSmoker == true) conditions.Add("smoker");
+        if (profile.IsDiabetic == true) conditions.Add("diabetic");
+        if (profile.IsHypertensive == true) conditions.Add("hypertensive");
+        if (conditions.Count > 0)
+            parts.Add(string.Join(", ", conditions));
+        if (profile.Bmi.HasValue)
+            parts.Add($"BMI {profile.Bmi.Value:F1}");
+        if (!string.IsNullOrWhiteSpace(profile.ActivityLevel))
+            parts.Add($"{profile.ActivityLevel.ToLower()} activity");
+        return parts.Count == 0 ? null : string.Join(", ", parts);
     }
 
     private static RecommendationType ParseType(string? raw)

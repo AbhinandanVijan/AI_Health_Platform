@@ -208,3 +208,13 @@ export interface ParsedInsufficientError {
   extractedCanonicalBiomarkerCount?: number;
   minimumRequiredCanonicalBiomarkerCount?: number;
 }
+
+export interface UserProfileDto {
+  dateOfBirth?: string | null;
+  biologicalSex?: string | null;
+  isSmoker?: boolean | null;
+  isDiabetic?: boolean | null;
+  isHypertensive?: boolean | null;
+  bmi?: number | null;
+  activityLevel?: string | null;
+}

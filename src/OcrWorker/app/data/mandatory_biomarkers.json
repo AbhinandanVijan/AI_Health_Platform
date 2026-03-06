@@ -1,6 +1,13 @@
 {
-  "minimumRequiredCanonicalBiomarkerCount": 1,
+  "minimumRequiredCanonicalBiomarkerCount": 8,
   "mandatoryBiomarkers": [
-    "Hemoglobin"
+    "Hemoglobin",
+    "Platelet Count",
+    "White Blood Cell Count",
+    "Glucose",
+    "HbA1c",
+    "Total Cholesterol",
+    "LDL Cholesterol",
+    "HDL Cholesterol"
   ]
 }

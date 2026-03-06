@@ -20,6 +20,7 @@ import {
   InsightHistoryItem,
   TrackedDocument,
   UploadStatusResponse,
+  UserProfileDto,
 } from '../models/api.models';
 import { buildApiUrl } from '../config/api.config';
 
@@ -129,6 +130,14 @@ export class ApiService {
 
   getInsightHistory(skip = 0, take = 20): Observable<InsightHistoryItem[]> {
     return this.http.get<InsightHistoryItem[]>(buildApiUrl(`/api/history/insights?skip=${skip}&take=${take}`));
+  }
+
+  getProfile(): Observable<UserProfileDto> {
+    return this.http.get<UserProfileDto>(buildApiUrl('/api/me/profile'));
+  }
+
+  updateProfile(dto: UserProfileDto): Observable<UserProfileDto> {
+    return this.http.put<UserProfileDto>(buildApiUrl('/api/me/profile'), dto);
   }
 
   parseInsufficientError(raw: string | undefined): ParsedInsufficientError | null {

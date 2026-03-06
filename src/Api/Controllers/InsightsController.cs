@@ -2,6 +2,7 @@ using Api.Auth;
 using Api.Domain;
 using Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -14,11 +15,13 @@ public class InsightsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IInsightsGenerationService _insightsGenerationService;
+    private readonly UserManager<AppUser> _userManager;
 
-    public InsightsController(AppDbContext db, IInsightsGenerationService insightsGenerationService)
+    public InsightsController(AppDbContext db, IInsightsGenerationService insightsGenerationService, UserManager<AppUser> userManager)
     {
         _db = db;
         _insightsGenerationService = insightsGenerationService;
+        _userManager = userManager;
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -332,6 +335,17 @@ public class InsightsController : ControllerBase
 
         _db.ScoreSnapshots.Add(snapshot);
 
+        var appUser = await _userManager.FindByIdAsync(UserId);
+        var userProfile = appUser is null ? null : new UserProfileContext(
+            Age: appUser.DateOfBirth.HasValue ? (int)((DateTime.UtcNow - appUser.DateOfBirth.Value).TotalDays / 365.25) : null,
+            BiologicalSex: appUser.BiologicalSex,
+            IsSmoker: appUser.IsSmoker,
+            IsDiabetic: appUser.IsDiabetic,
+            IsHypertensive: appUser.IsHypertensive,
+            Bmi: appUser.Bmi,
+            ActivityLevel: appUser.ActivityLevel
+        );
+
         IReadOnlyList<GeneratedInsightItem> generatedItems;
         try
         {
@@ -343,7 +357,8 @@ public class InsightsController : ControllerBase
                     Confidence: confidence,
                     RiskBand: riskBand,
                     MandatoryEvaluation: evaluation,
-                    Biomarkers: biomarkerReadings
+                    Biomarkers: biomarkerReadings,
+                    UserProfile: userProfile
                 ),
                 HttpContext.RequestAborted
             );
@@ -517,6 +532,17 @@ public class InsightsController : ControllerBase
 
         _db.ScoreSnapshots.Add(snapshot);
 
+        var appUser2 = await _userManager.FindByIdAsync(UserId);
+        var userProfile2 = appUser2 is null ? null : new UserProfileContext(
+            Age: appUser2.DateOfBirth.HasValue ? (int)((DateTime.UtcNow - appUser2.DateOfBirth.Value).TotalDays / 365.25) : null,
+            BiologicalSex: appUser2.BiologicalSex,
+            IsSmoker: appUser2.IsSmoker,
+            IsDiabetic: appUser2.IsDiabetic,
+            IsHypertensive: appUser2.IsHypertensive,
+            Bmi: appUser2.Bmi,
+            ActivityLevel: appUser2.ActivityLevel
+        );
+
         IReadOnlyList<GeneratedInsightItem> generatedItems;
         try
         {
@@ -528,7 +554,8 @@ public class InsightsController : ControllerBase
                     Confidence: confidence,
                     RiskBand: riskBand,
                     MandatoryEvaluation: evaluation,
-                    Biomarkers: selectedReadings
+                    Biomarkers: selectedReadings,
+                    UserProfile: userProfile2
                 ),
                 HttpContext.RequestAborted
             );
