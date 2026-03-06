@@ -23,6 +23,15 @@ public class InsightsController : ControllerBase
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
+    /// <summary>
+    /// Auto-escalate to PendingReview if Priority is high (1 or 2),
+    /// type is RiskPrediction, or risk band is High.
+    /// </summary>
+    private static bool ShouldAutoEscalate(int priority, RecommendationType type, RiskBand riskBand) =>
+        priority <= 2
+        || type == RecommendationType.RiskPrediction
+        || riskBand == RiskBand.High;
+
     public record InsightRecommendationDto(
         Guid Id,
         RecommendationType Type,
@@ -353,7 +362,9 @@ public class InsightsController : ControllerBase
                 UserId = UserId,
                 DocumentId = docId,
                 ScoreSnapshotId = snapshot.Id,
-                Status = RecommendationStatus.Draft,
+                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand)
+                    ? RecommendationStatus.PendingReview
+                    : RecommendationStatus.Draft,
                 Type = item.Type,
                 Priority = item.Priority,
                 Title = item.Title,
@@ -536,7 +547,9 @@ public class InsightsController : ControllerBase
                 UserId = UserId,
                 DocumentId = anchorDocumentId,
                 ScoreSnapshotId = snapshot.Id,
-                Status = RecommendationStatus.Draft,
+                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand)
+                    ? RecommendationStatus.PendingReview
+                    : RecommendationStatus.Draft,
                 Type = item.Type,
                 Priority = item.Priority,
                 Title = item.Title,
@@ -596,21 +609,11 @@ public class InsightsController : ControllerBase
         if (recommendation is null)
             return NotFound(new { message = "Recommendation not found" });
 
-        if (recommendation.ApprovedAtUtc.HasValue && recommendation.Status == RecommendationStatus.Published)
-        {
-            return Ok(new InsightRecommendationDto(
-                recommendation.Id,
-                recommendation.Type,
-                recommendation.Status,
-                recommendation.Priority,
-                recommendation.Title,
-                recommendation.Content,
-                recommendation.EvidenceJson,
-                recommendation.CreatedAtUtc,
-                true,
-                recommendation.ApprovedAtUtc
-            ));
-        }
+        if (recommendation.Status == RecommendationStatus.Published)
+            return Conflict(new { message = "Recommendation has already been approved by a clinician." });
+
+        if (recommendation.Status == RecommendationStatus.PendingReview)
+            return Conflict(new { message = "Recommendation is already pending clinician review." });
 
         recommendation.Status = RecommendationStatus.PendingReview;
         recommendation.ApprovedAtUtc = null;
