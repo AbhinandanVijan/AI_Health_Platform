@@ -36,13 +36,7 @@ jobs:
           set -euo pipefail
           REPO_DIR="$RUNNER_TEMP/repo"
           rm -rf "$REPO_DIR"
-          mkdir -p "$REPO_DIR"
-          cd "$REPO_DIR"
-
-          git init
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git -c http.extraheader="AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch --depth 1 origin "${GITHUB_REF}"
-          git checkout --detach FETCH_HEAD
+          git clone --depth 1 --branch "${GITHUB_REF_NAME}" "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$REPO_DIR"
 
           echo "REPO_DIR=$REPO_DIR" >> "$GITHUB_ENV"
 
