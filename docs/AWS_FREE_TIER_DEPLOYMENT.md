@@ -236,3 +236,171 @@ For HTTPS and cleaner public experience:
 1. Add CloudFront in front of frontend bucket.
 2. Add HTTPS edge for API (CloudFront or ALB + ACM).
 3. Switch frontend `apiBaseUrl` to HTTPS API domain.
+
+---
+
+## 9) CI/CD with GitHub Actions
+
+This repository includes two workflows:
+
+- `.github/workflows/deploy-backend.yml`
+- `.github/workflows/deploy-frontend.yml`
+
+Both workflows target GitHub environment: `production`.
+
+### 9.1 Backend deploy workflow
+
+Trigger:
+
+- `push` to `main` when backend/infra files change.
+- manual `workflow_dispatch`.
+
+Behavior:
+
+1. SSH to EC2.
+2. Pull latest `main`.
+3. Run:
+
+```bash
+docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
+```
+
+4. Run health check (`curl -fsS http://localhost/health`).
+
+Required GitHub secrets:
+
+- `EC2_HOST`
+- `EC2_USER`
+- `EC2_SSH_KEY`
+
+Optional GitHub variable:
+
+- `EC2_APP_PATH` (defaults to `~/AI_Health_Platform`)
+
+### 9.2 Frontend deploy workflow
+
+Trigger:
+
+- `push` to `main` when `frontend/**` changes.
+- manual `workflow_dispatch`.
+
+Behavior:
+
+1. Build Angular app.
+2. Assume AWS role via OIDC.
+3. Sync `frontend/dist/frontend/browser` to S3 bucket.
+
+Required GitHub variables:
+
+- `AWS_OIDC_ROLE_ARN`
+- `AWS_REGION`
+- `FRONTEND_BUCKET`
+
+### 9.3 OIDC role notes
+
+Use GitHub OIDC (recommended) instead of static AWS keys.
+
+Typical S3 permissions for the frontend bucket:
+
+- `s3:ListBucket`
+- `s3:GetObject`
+- `s3:PutObject`
+- `s3:DeleteObject`
+
+Scope permissions to the target frontend bucket only.
+
+### 9.4 IAM trust policy (GitHub OIDC)
+
+Replace placeholders before saving:
+
+- `<ACCOUNT_ID>`
+- `<GITHUB_ORG>`
+- `<GITHUB_REPO>`
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:<GITHUB_ORG>/<GITHUB_REPO>:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 9.5 IAM inline policy (frontend S3 deploy)
+
+Replace `<FRONTEND_BUCKET>`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListFrontendBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::<FRONTEND_BUCKET>"
+    },
+    {
+      "Sid": "ManageFrontendObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::<FRONTEND_BUCKET>/*"
+    }
+  ]
+}
+```
+
+### 9.6 AWS Console setup steps
+
+1. IAM -> Identity providers -> Add provider
+- Provider type: `OpenID Connect`
+- Provider URL: `https://token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+
+2. IAM -> Roles -> Create role
+- Trusted entity type: `Web identity`
+- Identity provider: `token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+- Attach no broad policy yet.
+
+3. In role `Trust relationships`, paste policy from section 9.4.
+
+4. In role `Permissions`, add inline policy from section 9.5.
+
+5. Copy role ARN and set GitHub repo variable:
+- `AWS_OIDC_ROLE_ARN=<role-arn>`
+
+6. Set remaining GitHub repo variables:
+- `AWS_REGION=us-east-2`
+- `FRONTEND_BUCKET=aihealth-frontend-abhinandan`
+- Optional `EC2_APP_PATH=~/AI_Health_Platform`
+
+7. Set GitHub repo secrets for backend deploy:
+- `EC2_HOST`
+- `EC2_USER`
+- `EC2_SSH_KEY`
+
+8. Create GitHub environment:
+- Repo -> Settings -> Environments -> New environment -> `production`
+
+9. Trigger workflow manually (Actions -> `Deploy Frontend to S3` -> `Run workflow`) and confirm successful S3 sync.
