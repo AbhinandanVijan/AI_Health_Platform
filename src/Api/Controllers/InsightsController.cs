@@ -27,10 +27,11 @@ public class InsightsController : ControllerBase
     /// Auto-escalate to PendingReview if Priority is high (1 or 2),
     /// type is RiskPrediction, or risk band is High.
     /// </summary>
-    private static bool ShouldAutoEscalate(int priority, RecommendationType type, RiskBand riskBand) =>
+    private static bool ShouldAutoEscalate(int priority, RecommendationType type, RiskBand riskBand, decimal confidence) =>
         priority <= 2
         || type == RecommendationType.RiskPrediction
-        || riskBand == RiskBand.High;
+        || riskBand == RiskBand.High
+        || confidence < 0.6m;
 
     public record InsightRecommendationDto(
         Guid Id,
@@ -362,7 +363,7 @@ public class InsightsController : ControllerBase
                 UserId = UserId,
                 DocumentId = docId,
                 ScoreSnapshotId = snapshot.Id,
-                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand)
+                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand, confidence)
                     ? RecommendationStatus.PendingReview
                     : RecommendationStatus.Draft,
                 Type = item.Type,
@@ -547,7 +548,7 @@ public class InsightsController : ControllerBase
                 UserId = UserId,
                 DocumentId = anchorDocumentId,
                 ScoreSnapshotId = snapshot.Id,
-                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand)
+                Status = ShouldAutoEscalate(item.Priority, item.Type, riskBand, confidence)
                     ? RecommendationStatus.PendingReview
                     : RecommendationStatus.Draft,
                 Type = item.Type,
