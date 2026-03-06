@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  ApprovedRecommendationItem,
   BiomarkerHistoryItem,
   ClinicianRecommendationQueueItem,
   DirectUploadResponse,
@@ -95,12 +96,19 @@ export class ApiService {
     return this.http.post<InsightRecommendation>(buildApiUrl(`/api/insights/recommendations/${recommendationId}/request-review`), {});
   }
 
-  approveRecommendation(recommendationId: string): Observable<InsightRecommendation> {
-    return this.http.post<InsightRecommendation>(buildApiUrl(`/api/insights/recommendations/${recommendationId}/approve`), {});
+  approveRecommendation(recommendationId: string, content?: string): Observable<InsightRecommendation> {
+    return this.http.post<InsightRecommendation>(
+      buildApiUrl(`/api/insights/recommendations/${recommendationId}/approve`),
+      { content: content ?? null }
+    );
   }
 
   getPendingRecommendationReviews(skip = 0, take = 50): Observable<ClinicianRecommendationQueueItem[]> {
     return this.http.get<ClinicianRecommendationQueueItem[]>(buildApiUrl(`/api/insights/recommendations/pending?skip=${skip}&take=${take}`));
+  }
+
+  getApprovedRecommendationReviews(skip = 0, take = 50): Observable<ApprovedRecommendationItem[]> {
+    return this.http.get<ApprovedRecommendationItem[]>(buildApiUrl(`/api/insights/recommendations/approved?skip=${skip}&take=${take}`));
   }
 
   getHistoryDocuments(skip = 0, take = 20): Observable<DocumentHistoryItem[]> {

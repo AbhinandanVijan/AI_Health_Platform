@@ -65,6 +65,21 @@ public class InsightsController : ControllerBase
         DateTime CreatedAtUtc
     );
 
+    public record ApprovedRecommendationItemDto(
+        Guid Id,
+        string UserId,
+        string? UserEmail,
+        Guid DocumentId,
+        RecommendationType Type,
+        int Priority,
+        string Title,
+        string Content,
+        DateTime CreatedAtUtc,
+        DateTime? ApprovedAtUtc
+    );
+
+    public record ApproveRecommendationRequest(string? Content);
+
     private const string AggregateModelVersion = "rules-v1-aggregate";
     private const string DocumentModelVersion = "rules-v1";
 
@@ -618,7 +633,44 @@ public class InsightsController : ControllerBase
     }
 
     /// <summary>
-    /// Approves a recommendation as a clinician.
+    /// Gets previous approved recommendations by the clinician.
+    /// </summary>
+    [Authorize(Roles = "Clinician")]
+    [HttpGet("recommendations/approved")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(IReadOnlyList<ApprovedRecommendationItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<ApprovedRecommendationItemDto>>> GetApprovedRecommendationReviews([FromQuery] int skip = 0, [FromQuery] int take = 50)
+    {
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 200);
+
+        var rows = await _db.Recommendations
+            .AsNoTracking()
+            .Where(r => r.Status == RecommendationStatus.Published && r.ApprovedAtUtc.HasValue)
+            .OrderByDescending(r => r.ApprovedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(r => new ApprovedRecommendationItemDto(
+                r.Id,
+                r.UserId,
+                _db.Users.Where(u => u.Id == r.UserId).Select(u => u.Email).FirstOrDefault(),
+                r.DocumentId,
+                r.Type,
+                r.Priority,
+                r.Title,
+                r.Content,
+                r.CreatedAtUtc,
+                r.ApprovedAtUtc
+            ))
+            .ToListAsync();
+
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// Approves a recommendation as a clinician, optionally updating the content.
     /// </summary>
     [Authorize(Roles = "Clinician")]
     [HttpPost("recommendations/{recommendationId:guid}/approve")]
@@ -627,13 +679,16 @@ public class InsightsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<InsightRecommendationDto>> ApproveRecommendation(Guid recommendationId)
+    public async Task<ActionResult<InsightRecommendationDto>> ApproveRecommendation(Guid recommendationId, [FromBody] ApproveRecommendationRequest request)
     {
         var recommendation = await _db.Recommendations
             .FirstOrDefaultAsync(r => r.Id == recommendationId);
 
         if (recommendation is null)
             return NotFound(new { message = "Recommendation not found" });
+
+        if (!string.IsNullOrWhiteSpace(request?.Content))
+            recommendation.Content = request.Content.Trim();
 
         recommendation.Status = RecommendationStatus.Published;
         recommendation.ApprovedAtUtc = DateTime.UtcNow;

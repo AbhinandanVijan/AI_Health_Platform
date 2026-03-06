@@ -30,10 +30,17 @@ import { AuthService } from '../core/services/auth.service';
         <div class="brand">AI Health Platform</div>
         <mat-divider></mat-divider>
         <mat-nav-list>
-          <a mat-list-item routerLink="/dashboard" routerLinkActive="active-link">Dashboard</a>
-          <a mat-list-item routerLink="/uploads" routerLinkActive="active-link">Uploads & Status</a>
-          <a mat-list-item routerLink="/history" routerLinkActive="active-link">My History</a>
-          <a mat-list-item routerLink="/clinician-review" routerLinkActive="active-link" *ngIf="isClinician()">Clinician Review</a>
+          <!-- Clinician navigation -->
+          <ng-container *ngIf="isClinician()">
+            <a mat-list-item routerLink="/clinician-review" routerLinkActive="active-link">Clinician Review</a>
+            <a mat-list-item routerLink="/review-history" routerLinkActive="active-link">Review History</a>
+          </ng-container>
+          <!-- Regular user navigation -->
+          <ng-container *ngIf="!isClinician()">
+            <a mat-list-item routerLink="/dashboard" routerLinkActive="active-link">Dashboard</a>
+            <a mat-list-item routerLink="/uploads" routerLinkActive="active-link">Uploads & Status</a>
+            <a mat-list-item routerLink="/history" routerLinkActive="active-link">My History</a>
+          </ng-container>
         </mat-nav-list>
       </mat-sidenav>
 

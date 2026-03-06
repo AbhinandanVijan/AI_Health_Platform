@@ -4,8 +4,9 @@ import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { UploadsComponent } from './features/uploads/uploads.component';
 import { HistoryComponent } from './features/history/history.component';
 import { ClinicianReviewComponent } from './features/clinician/clinician-review.component';
+import { PatientReviewHistoryComponent } from './features/clinician/patient-review-history.component';
 import { ShellComponent } from './layout/shell.component';
-import { authGuard, clinicianGuard, guestGuard } from './core/guards/auth.guard';
+import { authGuard, clinicianGuard, guestGuard, homeGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
 	{
@@ -22,7 +23,8 @@ export const routes: Routes = [
 			{ path: 'uploads', component: UploadsComponent },
 			{ path: 'history', component: HistoryComponent },
 			{ path: 'clinician-review', component: ClinicianReviewComponent, canActivate: [clinicianGuard] },
-			{ path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+			{ path: 'review-history', component: PatientReviewHistoryComponent, canActivate: [clinicianGuard] },
+			{ path: '', pathMatch: 'full', canActivate: [homeGuard], component: DashboardComponent },
 		],
 	},
 	{ path: '**', redirectTo: '' },

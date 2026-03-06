@@ -24,6 +24,27 @@ export const guestGuard: CanActivateFn = () => {
   return true;
 };
 
+export const homeGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  const auth = inject(AuthService);
+
+  const me = auth.me();
+  if (me) {
+    return me.roles?.includes('Clinician')
+      ? router.parseUrl('/clinician-review')
+      : router.parseUrl('/dashboard');
+  }
+
+  return auth.loadMe().pipe(
+    map((loadedMe) =>
+      loadedMe.roles?.includes('Clinician')
+        ? router.parseUrl('/clinician-review')
+        : router.parseUrl('/dashboard')
+    ),
+    catchError(() => of(router.parseUrl('/dashboard')))
+  );
+};
+
 export const clinicianGuard: CanActivateFn = () => {
   const router = inject(Router);
   const auth = inject(AuthService);

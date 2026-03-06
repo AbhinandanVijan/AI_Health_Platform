@@ -187,6 +187,19 @@ export interface ClinicianRecommendationQueueItem {
   createdAtUtc: string;
 }
 
+export interface ApprovedRecommendationItem {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  documentId: string;
+  type: number;
+  priority: number;
+  title: string;
+  content: string;
+  createdAtUtc: string;
+  approvedAtUtc: string;
+}
+
 export interface ParsedInsufficientError {
   code?: string;
   message?: string;
