@@ -90,7 +90,9 @@ Insights and review:
 - `POST /api/insights/generate`
 - `GET /api/insights/latest`
 - `POST /api/insights/recommendations/{recommendationId}/request-review`
-- `POST /api/insights/recommendations/{recommendationId}/approve`
+- `POST /api/insights/recommendations/{recommendationId}/approve` (accepts optional `{ "content": "..." }` body to override recommendation text)
+- `GET /api/insights/recommendations/pending` (Clinician role)
+- `GET /api/insights/recommendations/approved` (Clinician role)
 
 Operational:
 
@@ -175,6 +177,15 @@ Common runtime checks:
 - RDS reachable from EC2 security group.
 - CORS preflight includes `Access-Control-Allow-Origin` for frontend origin.
 
+## User Roles and Navigation
+
+The frontend has role-based navigation:
+
+- **User**: Dashboard, Uploads & Status, My History
+- **Clinician**: Clinician Review Queue, Review History (patient approval history)
+
+Root path (`/`) auto-redirects based on role — clinicians go to `/clinician-review`, users go to `/dashboard`.
+
 ## Security Notes
 
 - Keep EC2 SSH (`22`) restricted to your IP.
@@ -197,6 +208,12 @@ curl -i -X OPTIONS 'http://<api-host>/api/auth/register' \
   -H 'Origin: http://<frontend-endpoint>' \
   -H 'Access-Control-Request-Method: POST' \
   -H 'Access-Control-Request-Headers: content-type,authorization'
+```
+
+If `docker build` hangs during `dotnet publish` on EC2 (especially `t2.micro` / `t3.micro`), the instance is likely out of memory. Add swap before building:
+
+```bash
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 ```
 
 For known issues and resolutions, see:

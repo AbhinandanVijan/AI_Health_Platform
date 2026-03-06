@@ -211,3 +211,72 @@
 - **Files Changed:**
   - `.env.aws` (on EC2)
   - `docs/AWS_FREE_TIER_DEPLOYMENT.md`
+
+---
+
+## 2026-03-06 - Clinician UX overhaul: role-based nav, edit-before-approve, review history
+
+- **Area:** Frontend / API / Clinician Workflow
+- **Symptom:** Clinicians saw irrelevant pages (Dashboard, Uploads, History); no way to edit recommendation text before approving; no history of past approvals.
+- **Root Cause:** Navigation was a single unified list with no role differentiation; approve endpoint accepted no content override; no approved-history endpoint existed.
+- **Resolution:**
+  - Added role-based navigation in shell: clinicians see only "Clinician Review" and "Review History"; users see Dashboard/Uploads/History.
+  - Added `homeGuard` to redirect root path to `/clinician-review` (Clinician) or `/dashboard` (User).
+  - Rewrote `ClinicianReviewComponent` with card-per-recommendation layout, type badges, inline edit textarea, and "Approve with Changes" flow.
+  - Modified `POST /recommendations/{id}/approve` to accept optional `{ "content": "..." }` body, overriding recommendation text before publishing.
+  - Added `GET /api/insights/recommendations/approved` endpoint returning all published+approved recommendations for Clinician role.
+  - Created `PatientReviewHistoryComponent` at `/review-history` backed by new endpoint.
+- **Validation:** Clinicians can edit recommendation text inline, approve with or without changes, then view all past approvals in Review History. Users see no clinician pages.
+- **Files Changed:**
+  - `src/Api/Controllers/InsightsController.cs`
+  - `frontend/src/app/layout/shell.component.ts`
+  - `frontend/src/app/core/guards/auth.guard.ts`
+  - `frontend/src/app/app.routes.ts`
+  - `frontend/src/app/features/clinician/clinician-review.component.ts`
+  - `frontend/src/app/features/clinician/patient-review-history.component.ts` (new)
+  - `frontend/src/app/core/services/api.service.ts`
+  - `frontend/src/app/core/models/api.models.ts`
+
+## 2026-03-06 - GitHub Actions backend deploy failing (Docker build context + health check)
+
+- **Area:** DevOps / Docker / CI-CD
+- **Symptom:** GitHub Actions `deploy-backend` job timed out or failed health check immediately after `docker compose up -d`.
+- **Root Cause 1:** No `.dockerignore` — entire repo (including `frontend/dist/`, build artifacts) sent as Docker build context, causing very slow or hung builds.
+- **Root Cause 2:** Health check `curl` ran immediately after `docker compose up -d` — API not ready yet (DB migrations + role seeding take several seconds).
+- **Resolution:**
+  - Created `.dockerignore` excluding `frontend/`, `.git/`, `docs/`, build outputs, IDE files.
+  - Updated workflow health check to retry 24 × 5s (120s total) before failing; prints container logs on timeout.
+- **Validation:** Build context reduced significantly; health check passes reliably after container warmup.
+- **Files Changed:**
+  - `.dockerignore` (new)
+  - `.github/workflows/deploy-backend.yml`
+
+## 2026-03-06 - mat-icon names rendering as raw text inside buttons
+
+- **Area:** Frontend / Angular Material
+- **Symptom:** Button labels showed "re", "ec", "ch" text fragments overlapping with button text (e.g., "Refresh", "Edit", "Check").
+- **Root Cause:** Material Icons Google Font not loaded in `index.html`. Without the font, `<mat-icon>` renders the icon ligature name as plain text adjacent to the button label.
+- **Resolution:**
+  - Added `<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">` to `frontend/src/index.html`.
+  - Removed `<mat-icon>` elements from inside buttons in clinician components (text-only labels).
+- **Validation:** Buttons display clean text-only labels with no raw icon name fragments.
+- **Files Changed:**
+  - `frontend/src/index.html`
+  - `frontend/src/app/features/clinician/clinician-review.component.ts`
+  - `frontend/src/app/features/clinician/patient-review-history.component.ts`
+
+## 2026-03-06 - Docker build hung on `dotnet publish` on t2.micro (OOM)
+
+- **Area:** DevOps / Docker / EC2
+- **Symptom:** `docker compose build` hung indefinitely at `RUN dotnet publish ... -c Release` (240s+ with no progress past "Determining projects to restore...").
+- **Root Cause:** EC2 `t2.micro` has 1GB RAM with 0 swap. `dotnet publish -c Release` (Roslyn compiler) requires ~1.5–2GB; OOM killer silently killed the compiler process causing an infinite hang.
+- **Resolution:** Added 2GB swap file on EC2 before building:
+  ```bash
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  ```
+- **Validation:** Build completed successfully in ~4 minutes after adding swap. No extra AWS cost (uses existing EBS disk space).
+- **Files Changed:**
+  - EC2 instance (swap added at OS level, not persisted across reboot)

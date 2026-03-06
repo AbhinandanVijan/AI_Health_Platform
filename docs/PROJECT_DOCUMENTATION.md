@@ -1,6 +1,6 @@
 # AI Health Platform - Project Documentation
 
-Last updated: 2026-03-05 (AWS deployment alignment)
+Last updated: 2026-03-06 (clinician UX overhaul, deployment improvements)
 
 ## 1) Documentation Map
 
@@ -160,8 +160,9 @@ Aggregate scope:
 Recommendation review:
 
 - `POST /api/insights/recommendations/{recommendationId}/request-review`
-- `POST /api/insights/recommendations/{recommendationId}/approve`
-- `GET /api/insights/recommendations/pending?skip=0&take=50`
+- `POST /api/insights/recommendations/{recommendationId}/approve` (optional `{ "content": "..." }` body to override text before publishing)
+- `GET /api/insights/recommendations/pending?skip=0&take=50` (Clinician role)
+- `GET /api/insights/recommendations/approved?skip=0&take=50` (Clinician role — approved history)
 
 ---
 
@@ -200,6 +201,7 @@ Insights:
 - `POST /api/insights/recommendations/{recommendationId}/request-review`
 - `POST /api/insights/recommendations/{recommendationId}/approve`
 - `GET /api/insights/recommendations/pending`
+- `GET /api/insights/recommendations/approved`
 
 Operational:
 
@@ -298,6 +300,43 @@ For complete deployment and troubleshooting commands, see:
 - Add deeper observability (structured logs/metrics/alerts) and backup/restore runbooks.
 
 ---
+
+## 11) Frontend Architecture
+
+### 11.1 Role-based navigation
+
+Navigation is driven by the authenticated user's role, resolved at runtime via `auth.me()` signal:
+
+| Role | Pages visible |
+|---|---|
+| User | Dashboard, Uploads & Status, My History |
+| Clinician | Clinician Review Queue, Review History |
+
+Root path (`/`) uses a `homeGuard` that reads the user role and redirects:
+- Clinician → `/clinician-review`
+- User → `/dashboard`
+
+### 11.2 Clinician Review Queue (`/clinician-review`)
+
+- Displays all `PendingReview` recommendations as cards.
+- Each card shows: title, type badge (Insight / Risk Prediction / Action), patient email, document ID, requested date, and recommendation content.
+- **Edit**: toggles an inline textarea to modify recommendation text before approving.
+- **Approve / Approve with Changes**: calls `POST /recommendations/{id}/approve` with optional updated content body.
+- Approved items are removed from the queue immediately on success.
+
+### 11.3 Review History (`/review-history`)
+
+- Displays all `Published` + approved recommendations across all patients.
+- Shows: title, type badge, patient email, document ID, approved date, and final recommendation content.
+- Backed by `GET /api/insights/recommendations/approved`.
+
+### 11.4 Angular Material setup
+
+- Material Icons loaded via Google Fonts CDN in `index.html`:
+  ```html
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  ```
+- Without this, `<mat-icon>` renders icon names as raw text.
 
 ## 11) Change Practice
 
