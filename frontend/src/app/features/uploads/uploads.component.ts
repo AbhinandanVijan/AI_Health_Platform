@@ -33,7 +33,7 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
           <mat-option [value]="1">Lab PDF</mat-option>
         </mat-select>
       </mat-form-field>
-      <button mat-flat-button color="primary" (click)="upload()" [disabled]="!selectedFile() || loading()">
+      <button mat-flat-button color="primary" class="upload-btn" (click)="upload()" [disabled]="!selectedFile() || loading()">
         {{ loading() ? 'Uploading...' : 'Upload & Start Processing' }}
       </button>
       <p *ngIf="lastDocId()">Last uploaded document: {{ lastDocId() }}</p>
@@ -43,8 +43,10 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
 
     <mat-card *ngIf="lastDocId() as docId">
       <h3>Status for {{ docId }}</h3>
-      <button mat-stroked-button (click)="refreshStatus()">Refresh Status</button>
-      <button mat-stroked-button (click)="reprocess()">Reprocess</button>
+      <div class="status-actions">
+        <button mat-stroked-button (click)="refreshStatus()">Refresh Status</button>
+        <button mat-stroked-button (click)="reprocess()">Reprocess</button>
+      </div>
       <div *ngIf="status() as s" class="status-block">
         <p>Document status: {{ documentStatusLabel(s.documentStatus) }}</p>
         <p>Job status: {{ s.latestJobStatus ? jobStatusLabel(s.latestJobStatus) : '-' }}</p>
@@ -53,6 +55,9 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
       <div *ngIf="insufficientError() as ie" class="insufficient">
         <p><strong>{{ ie.message }}</strong></p>
         <p *ngIf="ie.missingMandatoryBiomarkers?.length">Missing: {{ ie.missingMandatoryBiomarkers?.join(', ') }}</p>
+        <p *ngIf="!ie.missingMandatoryBiomarkers?.length && ie.extractedCanonicalBiomarkerCount != null">
+          {{ ie.extractedCanonicalBiomarkerCount }} of {{ ie.minimumRequiredCanonicalBiomarkerCount }} minimum required biomarkers detected.
+        </p>
       </div>
     </mat-card>
 
@@ -87,13 +92,16 @@ import { ParsedInsufficientError, UploadStatusResponse } from '../../core/models
   `,
   styles: [
     `
-      mat-card { margin-bottom: 14px; }
+      mat-card { margin-bottom: 14px; padding: 16px 20px 20px; box-sizing: border-box; }
       .file-input { display: block; margin-bottom: 14px; }
-      .status-block, .insufficient { margin-top: 10px; }
+      mat-form-field { margin-bottom: 6px; }
+      .upload-btn { margin-top: 4px; margin-bottom: 4px; }
+      .status-block, .insufficient { margin-top: 12px; }
+      .status-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
       .error { color: #b00020; }
       .manual-rows { display: grid; gap: 10px; }
       .manual-row { display: grid; grid-template-columns: 1fr 120px 120px auto; gap: 8px; align-items: center; }
-      .manual-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+      .manual-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; margin-bottom: 4px; }
       .manual-action-button { min-height: 40px; min-width: 180px; }
       @media (max-width: 900px) { .manual-row { grid-template-columns: 1fr; } }
     `,
@@ -186,7 +194,17 @@ export class UploadsComponent implements OnDestroy {
         if (res.latestJobStatus === 4) {
           this.info.set('Parsing failed. You can reprocess the file or add biomarkers manually if needed.');
         } else if (res.latestJobStatus === 5) {
-          this.info.set('Insufficient mandatory biomarkers detected. Add remaining biomarkers manually below.');
+          const ie = this.api.parseInsufficientError(res.latestJobError);
+          if (ie?.missingMandatoryBiomarkers?.length) {
+            this.info.set('Missing mandatory biomarkers detected. Add them manually below.');
+          } else if (ie?.extractedCanonicalBiomarkerCount != null && ie?.minimumRequiredCanonicalBiomarkerCount != null) {
+            this.info.set(
+              `Only ${ie.extractedCanonicalBiomarkerCount} of ${ie.minimumRequiredCanonicalBiomarkerCount} ` +
+              `required biomarkers detected. Add more biomarkers manually if available.`
+            );
+          } else {
+            this.info.set('Insufficient biomarkers detected. Add remaining biomarkers manually below.');
+          }
         } else if (res.latestJobStatus === 2 || res.documentStatus === 2) {
           this.info.set('Processing in progress... status refresh is active.');
         } else {

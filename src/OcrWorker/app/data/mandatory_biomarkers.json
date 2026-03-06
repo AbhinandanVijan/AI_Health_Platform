@@ -1,5 +1,5 @@
 {
-  "minimumRequiredCanonicalBiomarkerCount": 9,
+  "minimumRequiredCanonicalBiomarkerCount": 1,
   "mandatoryBiomarkers": [
     "Hemoglobin"
   ]

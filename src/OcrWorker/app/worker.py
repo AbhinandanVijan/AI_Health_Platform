@@ -91,9 +91,17 @@ def _build_insufficient_data_error(extracted_codes: set[str]) -> str | None:
     if not missing and len(extracted_codes) >= min_required:
         return None
 
+    if missing:
+        message = "Uploaded report is missing mandatory blood biomarkers."
+    else:
+        message = (
+            f"Lab report contains {len(extracted_codes)} biomarker(s), "
+            f"below the minimum of {min_required} required for a complete analysis."
+        )
+
     payload = {
         "code": "LAB_REPORT_VALIDATION_INSUFFICIENT_DATA",
-        "message": "Uploaded report is missing mandatory blood biomarkers.",
+        "message": message,
         "missingMandatoryBiomarkers": missing,
         "presentMandatoryBiomarkers": present,
         "extractedCanonicalBiomarkerCount": len(extracted_codes),

@@ -118,10 +118,15 @@ public static class BiomarkerCatalogPolicy
 
     public static string BuildInsufficientDataError(MandatoryEvaluationResult evaluation)
     {
+        var message = evaluation.MissingMandatoryBiomarkers.Count > 0
+            ? "Uploaded report is missing mandatory blood biomarkers."
+            : $"Lab report contains {evaluation.ExtractedCanonicalBiomarkerCount} biomarker(s), " +
+              $"below the minimum of {evaluation.MinimumRequiredCanonicalBiomarkerCount} required for a complete analysis.";
+
         var payload = new
         {
             code = "LAB_REPORT_VALIDATION_INSUFFICIENT_DATA",
-            message = "Uploaded report is missing mandatory blood biomarkers.",
+            message,
             missingMandatoryBiomarkers = evaluation.MissingMandatoryBiomarkers,
             presentMandatoryBiomarkers = evaluation.PresentMandatoryBiomarkers,
             extractedCanonicalBiomarkerCount = evaluation.ExtractedCanonicalBiomarkerCount,
