@@ -247,6 +247,7 @@ This repository includes two workflows:
 - `.github/workflows/deploy-frontend.yml`
 
 Both workflows target GitHub environment: `production`.
+They are implemented with shell steps only (no marketplace actions), which supports repositories configured to allow actions only from the current owner.
 
 ### 9.1 Backend deploy workflow
 
@@ -404,3 +405,11 @@ Replace `<FRONTEND_BUCKET>`:
 - Repo -> Settings -> Environments -> New environment -> `production`
 
 9. Trigger workflow manually (Actions -> `Deploy Frontend to S3` -> `Run workflow`) and confirm successful S3 sync.
+
+### 9.7 GitHub Actions permissions setting
+
+In GitHub repo settings:
+
+1. `Settings -> Actions -> General`
+2. Under `Workflow permissions`, select `Read and write permissions`
+3. Save
