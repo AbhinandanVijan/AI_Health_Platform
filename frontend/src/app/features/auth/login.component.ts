@@ -87,11 +87,11 @@ import { AuthService } from '../../core/services/auth.service';
   styles: [
     `
       .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
-      .auth-card { width: 100%; max-width: 430px; }
+      .auth-card { width: 100%; max-width: 460px; padding: 18px 22px 24px; box-sizing: border-box; }
       .auth-title { text-align: center; margin-bottom: 8px; }
-      .auth-form { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; }
+      .auth-form { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; padding-bottom: 10px; }
       .auth-field { width: 100%; max-width: 320px; }
-      .auth-submit { width: 100%; max-width: 320px; min-height: 40px; }
+      .auth-submit { width: 100%; max-width: 320px; min-height: 40px; margin-top: 6px; margin-bottom: 6px; }
       .error { color: #b00020; margin-top: 12px; }
     `,
   ],

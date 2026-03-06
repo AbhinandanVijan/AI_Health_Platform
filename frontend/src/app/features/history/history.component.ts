@@ -42,7 +42,7 @@ import {
         </p>
         <p><strong>Score:</strong> {{ insights.overallScore }} | <strong>Confidence:</strong> {{ toPercent(insights.confidence) }}</p>
         <ul>
-          <li *ngFor="let rec of insights.recommendations">
+          <li class="recommendation-item" *ngFor="let rec of insights.recommendations">
             <strong>{{ rec.title }}</strong>
             <p *ngIf="rec.isClinicianApproved" class="approved-badge">
               Clinician approved{{ rec.approvedAtUtc ? (' at ' + (rec.approvedAtUtc | date:'medium')) : '' }}
@@ -52,6 +52,7 @@ import {
             <button
               mat-stroked-button
               color="primary"
+              class="request-review-btn"
               *ngIf="canRequestReview(rec)"
               (click)="requestReview(rec.id)"
               [disabled]="requestingReviewIds().has(rec.id)">
@@ -95,8 +96,11 @@ import {
   styles: [
     `
       .history-item { margin-top: 12px; }
-      .insight-block { margin-top: 10px; padding: 10px; background: #f5f7ff; border-radius: 8px; }
+      .insight-block { margin-top: 10px; padding: 12px 14px 14px; background: #f5f7ff; border-radius: 8px; }
       button { margin-right: 8px; }
+      .recommendation-item { margin-bottom: 22px; padding-bottom: 14px; border-bottom: 1px solid rgba(0,0,0,0.12); }
+      .recommendation-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+      .request-review-btn { margin-top: 8px; margin-bottom: 6px; }
       .approved-badge {
         display: inline-block;
         padding: 4px 8px;
