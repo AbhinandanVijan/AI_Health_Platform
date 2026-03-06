@@ -15,54 +15,115 @@ concurrency:
   group: deploy-backend-main
   cancel-in-progress: false
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: production
 
     steps:
-      - name: Validate required secrets
+      - name: Validate required repository variables
         run: |
-          test -n "${{ secrets.EC2_HOST }}" || (echo "Missing secret: EC2_HOST" && exit 1)
-          test -n "${{ secrets.EC2_USER }}" || (echo "Missing secret: EC2_USER" && exit 1)
-          test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "Missing secret: EC2_SSH_KEY" && exit 1)
-          if [[ "${{ secrets.EC2_HOST }}" == http* ]]; then
-            echo "EC2_HOST should be hostname or IP only (no http:// or https://)."
-            exit 1
-          fi
+          test -n "${{ vars.AWS_OIDC_ROLE_ARN }}" || (echo "Missing var: AWS_OIDC_ROLE_ARN" && exit 1)
+          test -n "${{ vars.AWS_REGION }}" || (echo "Missing var: AWS_REGION" && exit 1)
+          test -n "${{ vars.EC2_INSTANCE_ID }}" || (echo "Missing var: EC2_INSTANCE_ID" && exit 1)
 
-      - name: Configure SSH key
+      - name: Ensure required tools are available
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          touch ~/.ssh/known_hosts
-          ssh-keyscan -T 10 -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts || echo "ssh-keyscan failed; proceeding with StrictHostKeyChecking=accept-new"
+          command -v python3 >/dev/null || (echo "python3 is required on runner" && exit 1)
+          if ! command -v aws >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y awscli
+          fi
 
-      - name: Deploy on EC2 over SSH
+      - name: Assume AWS role via OIDC
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_OIDC_ROLE_ARN: ${{ vars.AWS_OIDC_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          OIDC_TOKEN=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+
+          CREDS_JSON=$(aws sts assume-role-with-web-identity \
+            --role-arn "$AWS_OIDC_ROLE_ARN" \
+            --role-session-name "gha-backend-deploy" \
+            --web-identity-token "$OIDC_TOKEN" \
+            --duration-seconds 3600 \
+            --region "$AWS_REGION")
+
+          AWS_ACCESS_KEY_ID=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["AccessKeyId"])' <<< "$CREDS_JSON")
+          AWS_SECRET_ACCESS_KEY=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["SecretAccessKey"])' <<< "$CREDS_JSON")
+          AWS_SESSION_TOKEN=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["SessionToken"])' <<< "$CREDS_JSON")
+
+          {
+            echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+            echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+            echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"
+            echo "AWS_REGION=$AWS_REGION"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy on EC2 using SSM
+        env:
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           EC2_APP_PATH: ${{ vars.EC2_APP_PATH }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
 
           APP_PATH="$EC2_APP_PATH"
           if [ -z "$APP_PATH" ]; then
-            APP_PATH='~/AI_Health_Platform'
+            APP_PATH='/home/ec2-user/AI_Health_Platform'
           fi
 
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" "
-            set -euo pipefail
-            cd '$APP_PATH'
-            git fetch --all
-            git checkout main
-            git pull origin main
-            docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
-            docker compose --env-file .env.aws -f docker-compose.aws.yml ps
-            curl -fsS http://localhost/health > /dev/null
-            echo Backend deploy completed and health check passed.
-          "
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "GitHub Actions backend deploy" \
+            --parameters commands="[\"set -euo pipefail\",\"cd $APP_PATH\",\"git fetch --all\",\"git checkout main\",\"git pull origin main\",\"docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build\",\"docker compose --env-file .env.aws -f docker-compose.aws.yml ps\",\"curl -fsS http://localhost/health > /dev/null\",\"echo Backend deploy completed and health check passed.\"]" \
+            --query "Command.CommandId" \
+            --output text \
+            --region "$AWS_REGION")
+
+          echo "SSM command id: $COMMAND_ID"
+
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --query "Status" \
+              --output text \
+              --region "$AWS_REGION" 2>/dev/null || true)
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "Backend deploy succeeded via SSM."
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --query "StandardOutputContent" \
+                --output text \
+                --region "$AWS_REGION"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Backend deploy failed with status: $STATUS"
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --query "StandardErrorContent" \
+                --output text \
+                --region "$AWS_REGION" || true
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          echo "Timed out waiting for SSM command completion"
+          exit 1

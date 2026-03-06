@@ -258,8 +258,9 @@ Trigger:
 
 Behavior:
 
-1. SSH to EC2.
-2. Pull latest `main`.
+1. Assume AWS role via OIDC.
+2. Use AWS SSM Run Command on target EC2 instance.
+3. Pull latest `main` on instance.
 3. Run:
 
 ```bash
@@ -268,15 +269,12 @@ docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
 
 4. Run health check (`curl -fsS http://localhost/health`).
 
-Required GitHub secrets:
+Required GitHub variables:
 
-- `EC2_HOST`
-- `EC2_USER`
-- `EC2_SSH_KEY`
-
-Optional GitHub variable:
-
-- `EC2_APP_PATH` (defaults to `~/AI_Health_Platform`)
+- `AWS_OIDC_ROLE_ARN`
+- `AWS_REGION`
+- `EC2_INSTANCE_ID`
+- Optional `EC2_APP_PATH` (defaults to `/home/ec2-user/AI_Health_Platform`)
 
 ### 9.2 Frontend deploy workflow
 
@@ -397,9 +395,8 @@ Replace `<FRONTEND_BUCKET>`:
 - Optional `EC2_APP_PATH=~/AI_Health_Platform`
 
 7. Set GitHub repo secrets for backend deploy:
-- `EC2_HOST`
-- `EC2_USER`
-- `EC2_SSH_KEY`
+
+No SSH secrets are required for backend deploy when using SSM.
 
 8. Create GitHub environment:
 - Repo -> Settings -> Environments -> New environment -> `production`
@@ -413,3 +410,15 @@ In GitHub repo settings:
 1. `Settings -> Actions -> General`
 2. Under `Workflow permissions`, select `Read and write permissions`
 3. Save
+
+### 9.8 Additional IAM permissions for backend SSM deploy
+
+The OIDC role used by backend workflow also needs:
+
+- `ssm:SendCommand`
+- `ssm:GetCommandInvocation`
+
+Recommended scope:
+
+- target EC2 instance ARN
+- SSM document ARN: `arn:aws:ssm:<region>::document/AWS-RunShellScript`
