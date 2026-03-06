@@ -1,397 +1,305 @@
 # AI Health Platform - Project Documentation
 
-## 1) Project Overview
+Last updated: 2026-03-05 (AWS deployment alignment)
 
-AI Health Platform is a two-service backend system that ingests health documents, stores source files in S3, queues processing through SQS, and extracts normalized biomarker readings into PostgreSQL.
+## 1) Documentation Map
 
-Primary goals:
-- Secure upload flow using pre-signed S3 URLs
-- Asynchronous processing via queue/worker pattern
-- Structured persistence for documents, jobs, and extracted biomarker data
-- Idempotency on finalize to avoid duplicate records for same object key
+Use the right document for the right purpose:
+
+- `docs/PROJECT_DOCUMENTATION.md`: Product and system architecture, runtime behavior, API/domain model.
+- `docs/AWS_FREE_TIER_DEPLOYMENT.md`: AWS provisioning, deployment commands, troubleshooting.
+- `docs/PROBLEMS_AND_RESOLUTIONS.md`: Incident history and fixes in chronological order.
 
 ---
 
-## 2) High-Level Architecture
+## 2) Project Overview
+
+AI Health Platform is a multi-service health data processing platform that:
+
+- Authenticates users and clinicians with JWT-based access.
+- Accepts uploaded health documents (direct upload and presigned workflows).
+- Stores raw files in S3 and queues processing in SQS.
+- Runs asynchronous OCR/normalization in a Python worker.
+- Persists readings, jobs, scores, and recommendations in PostgreSQL.
+- Supports clinician review/approval workflow for recommendations.
+
+---
+
+## 3) Current Runtime Architecture
+
+### 3.1 Production (AWS deployment)
 
 ```mermaid
 flowchart LR
-    U[Client / Postman / Frontend] -->|JWT Auth| API[ASP.NET Core API]
-    API -->|Presign| S3[(Amazon S3 Bucket)]
-    U -->|PUT Presigned URL| S3
-    U -->|Finalize| API
-    API -->|Insert RawDocuments + ProcessingJobs| DB[(PostgreSQL)]
-    API -->|SendMessage| Q[(Amazon SQS Queue)]
-    W[Python OCR Worker] -->|ReceiveMessage| Q
+    U[Browser Frontend] -->|HTTPS or HTTP| FE[S3 Static Website / CloudFront optional]
+    FE -->|/api calls| GW[Nginx API Gateway on EC2 :80]
+    GW --> API[ASP.NET Core API :8080]
+    API --> DB[(RDS PostgreSQL)]
+    API --> S3[(S3 Raw Documents Bucket)]
+    API --> Q[(SQS Queue)]
+    W[Python OCR Worker on EC2] -->|ReceiveMessage| Q
     W -->|GetObject| S3
-    W -->|OCR + Parse + Normalize| W
-    W -->|Update Status + Insert BiomarkerReadings| DB
+    W -->|Upsert Readings + Job Status| DB
+```
+
+### 3.2 Local development
+
+```mermaid
+flowchart LR
+    FE[Angular Dev Server :4200] -->|proxy /api| API[ASP.NET Core API :8080]
+    API --> DB[(Postgres Docker service)]
+    API --> S3[(AWS S3)]
+    API --> Q[(AWS SQS)]
+    W[OCR Worker Docker] --> Q
+    W --> S3
+    W --> DB
 ```
 
 ---
 
-## 3) Runtime Components
+## 4) Runtime Components
 
-### 3.1 API Service (ASP.NET Core, .NET 8)
+### 4.1 API Service (.NET 8)
+
 Path: `src/Api`
 
 Responsibilities:
-- Authentication and JWT issuance
-- Upload orchestration (`presign`, `finalize`, `reprocess`)
-- Persisting document and job metadata
-- Publishing queue messages for async processing
+
+- Authentication and JWT issuance.
+- Upload orchestration (`presign`, `direct`, `finalize`, `reprocess`).
+- Insights generation and retrieval (document and aggregate scope).
+- Recommendation review workflow (request review, approve, pending queue).
+- Persistence orchestration for documents, jobs, readings, and insights.
 
 Key files:
+
 - `src/Api/Program.cs`
 - `src/Api/Controllers/AuthControllers.cs`
 - `src/Api/Controllers/UploadControlller.cs`
-- `src/Api/Auth/AppDbContext.cs`
-- `src/Api/Domain/*.cs`
+- `src/Api/Controllers/InsightsController.cs`
+- `src/Api/Controllers/HistoryController.cs`
+- `src/Api/Controllers/BiomarkersController.cs`
+- `src/Api/Controllers/MeController.cs`
 
-### 3.2 OCR Worker Service (Python)
+### 4.2 OCR Worker (Python)
+
 Path: `src/OcrWorker`
 
 Responsibilities:
-- Poll SQS and process newest message
-- Load source file from S3
-- OCR + parse measurements
-- Normalize units and canonical biomarker codes
-- Persist readings and update job/document status
+
+- Poll SQS with long-poll settings.
+- Fetch source object from S3.
+- OCR + parse + normalize biomarker readings.
+- Apply mandatory biomarker policy.
+- Update processing status and persist extracted readings.
 
 Key files:
+
 - `src/OcrWorker/main.py`
 - `src/OcrWorker/app/worker.py`
 - `src/OcrWorker/app/ocr_parser.py`
 - `src/OcrWorker/app/normalization.py`
 - `src/OcrWorker/app/config.py`
+- `src/OcrWorker/app/data/biomarker.json`
+- `src/OcrWorker/app/data/mandatory_biomarkers.json`
 
-### 3.3 Data Store
-PostgreSQL with EF Core migrations.
+### 4.3 Data Store (PostgreSQL)
 
 Core tables:
+
 - `RawDocuments`
 - `ProcessingJobs`
 - `BiomarkerReadings`
+- `ScoreSnapshots`
+- `Recommendations`
 - Identity tables (`AspNetUsers`, `AspNetRoles`, etc.)
 
 ---
 
-## 4) Project Structure
+## 5) Request and Processing Flows
 
-```text
-AiHealthPlatform/
-├── .env
-├── Api.sln
-├── docker-compose.yml
-├── docs/
-│   ├── PROJECT_DOCUMENTATION.md
-│   └── PROBLEMS_AND_RESOLUTIONS.md
-└── src/
-    ├── Api/
-    │   ├── Program.cs
-    │   ├── Controllers/
-    │   │   ├── AuthControllers.cs
-    │   │   ├── MeController.cs
-    │   │   └── UploadControlller.cs
-    │   ├── Auth/
-    │   ├── Domain/
-    │   └── Migrations/
-    └── OcrWorker/
-        ├── Dockerfile
-        ├── requirements.txt
-        ├── README.md
-        └── app/
-            ├── config.py
-            ├── normalization.py
-            ├── ocr_parser.py
-            └── worker.py
-```
+### 5.1 Auth flow
 
----
+1. `POST /api/auth/register`
+2. `POST /api/auth/login`
+3. Frontend stores JWT and sends Bearer token on protected calls.
 
-## 5) End-to-End Processing Flow
+### 5.2 Upload flow (recommended in browser)
 
-### Step 1: Authenticate
-- `POST /api/auth/login`
-- Returns JWT token for protected endpoints
+1. `POST /api/uploads/direct` (multipart form upload to API).
+2. API writes object to S3.
+3. API creates `RawDocument` and `ProcessingJob` rows.
+4. API sends SQS message.
+5. Worker consumes queue message, parses document, writes readings.
+6. Client polls `GET /api/uploads/status/{docId}`.
 
-### Step 2: Request Presigned URL
-- `POST /api/uploads/presign`
-- Body includes `fileName`, `contentType`, `docType`
-- Returns `uploadUrl`, `bucket`, `objectKey`
+### 5.3 Upload flow (presigned alternative)
 
-### Step 3: Upload Document to S3
-- `PUT <uploadUrl>`
-- Must send matching `Content-Type`
-- No Bearer token on this S3 PUT call
+1. `POST /api/uploads/presign`
+2. Browser `PUT` to S3 URL
+3. `POST /api/uploads/finalize`
+4. Same async worker flow as above.
 
-### Step 4: Finalize Upload
-- `POST /api/uploads/finalize`
-- Creates `RawDocument` + `ProcessingJob`
-- Publishes message to SQS
+### 5.4 Reprocess flow
 
-### Step 5: Worker Processing
-- Worker receives SQS message
-- Downloads S3 object
-- Extracts text from PDF/image (native PDF text first, OCR fallback)
-- Parses measurements and normalizes units
-- Inserts `BiomarkerReadings`
-- Marks job/document as succeeded and deletes SQS message
-
-### Step 6: Reprocess Existing Document (No Re-upload)
 - `POST /api/uploads/reprocess/{docId}`
-- Enqueues a fresh processing job for existing `RawDocument`
+- `POST /api/uploads/reprocess` with JSON body `{ "documentId": "..." }`
 
-Swagger-friendly variant:
-- `POST /api/uploads/reprocess`
-- JSON body:
+### 5.5 Insights flow
 
-```json
-{
-    "documentId": "GUID"
-}
-```
+Document scope:
 
-### Step 7: Check Upload Processing Status
-- `GET /api/uploads/status/{docId}`
-- Returns document status + latest job status
-- When latest job is `InsufficientData`, response includes `missingMandatoryBiomarkers`
-
-### Step 8: Generate AI Insights (LLM + RAG)
 - `POST /api/insights/generate/{docId}`
-- Generates a document-scoped score snapshot and recommendations
-- Uses deterministic scoring + LLM narrative generation grounded with retrieval context
-
-### Step 9: Fetch Latest AI Insights
 - `GET /api/insights/{docId}`
-- Returns latest score snapshot and generated recommendations for the document
+
+Aggregate scope:
+
+- `POST /api/insights/generate`
+- `GET /api/insights/latest`
+
+Recommendation review:
+
+- `POST /api/insights/recommendations/{recommendationId}/request-review`
+- `POST /api/insights/recommendations/{recommendationId}/approve`
+- `GET /api/insights/recommendations/pending?skip=0&take=50`
 
 ---
 
-## 6) Domain Model Reference
+## 6) API Surface Summary
 
-### 6.1 DocumentType
+Auth:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/me`
+
+Uploads:
+
+- `POST /api/uploads/presign`
+- `POST /api/uploads/direct`
+- `POST /api/uploads/finalize`
+- `GET /api/uploads/status/{docId}`
+- `POST /api/uploads/reprocess/{docId}`
+- `POST /api/uploads/reprocess`
+
+History and biomarkers:
+
+- `GET /api/history/documents`
+- `GET /api/history/documents/{docId}/biomarkers`
+- `GET /api/history/documents/{docId}/jobs`
+- `GET /api/history/biomarkers`
+- `GET /api/history/insights`
+- `POST /api/biomarkers/manual`
+
+Insights:
+
+- `POST /api/insights/generate/{docId}`
+- `GET /api/insights/{docId}`
+- `POST /api/insights/generate`
+- `GET /api/insights/latest`
+- `POST /api/insights/recommendations/{recommendationId}/request-review`
+- `POST /api/insights/recommendations/{recommendationId}/approve`
+- `GET /api/insights/recommendations/pending`
+
+Operational:
+
+- `GET /health`
+- `GET /swagger/index.html`
+
+---
+
+## 7) Domain and Enum Reference
+
+### 7.1 DocumentType
+
 - `1 = LabPdf`
 - `2 = GenomicsVcf`
 - `3 = WearableJson`
 
-### 6.2 JobType
+### 7.2 JobType
+
 - `1 = OcrLabPdf`
 - `2 = ParseVcf`
 - `3 = Normalize`
 - `4 = ScoreRecalc`
 - `5 = GenerateRecommendations`
 
-### 6.3 JobStatus
+### 7.3 JobStatus
+
 - `1 = Ready`
 - `2 = Processing`
 - `3 = Succeeded`
 - `4 = Failed`
 - `5 = InsufficientData`
 
-### 6.4 DocumentStatus
+### 7.4 DocumentStatus
+
 - `1 = Uploaded`
 - `2 = Processing`
 - `3 = Processed`
 - `4 = Failed`
 
+### 7.5 RecommendationType
+
+- `1 = Insight`
+- `2 = RiskPrediction`
+- `3 = Action`
+
+### 7.6 RecommendationStatus
+
+- `1 = Draft`
+- `2 = PendingReview`
+- `3 = Published`
+- `4 = Rejected`
+
 ---
 
-## 7) Environment Configuration
+## 8) Configuration and Security
 
-Main file: `.env`
+### 8.1 Key environment variables
 
-Important values:
-- DB: `POSTGRES_*`, `CONNSTR_HOST`, `CONNSTR_DOCKER`
-- Auth: `JWT_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE`
-- AWS: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
-- Storage/Queue: `S3_BUCKET`, `SQS_QUEUE_URL`
+- DB: `ConnectionStrings__Default` or `CONNSTR_HOST` / `CONNSTR_RDS`
+- JWT: `JWT_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE`
+- AWS: `AWS_REGION`, `S3_BUCKET`, `SQS_QUEUE_URL`
+- CORS: `CORS_ALLOWED_ORIGINS`
 - LLM: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`
-- RAG: `RAG_MAX_CHUNKS`
+- Worker tuning: `OCR_POLL_WAIT_SECONDS`, `OCR_LOOP_SLEEP_SECONDS`
 
-Notes:
-- API/worker in Docker should use `CONNSTR_DOCKER` (`Host=db;Port=5432;...`)
-- Local clients (pgAdmin) use mapped host port (for example `localhost:5433` if remapped)
-- S3 and SQS region must match actual resource regions
-- LLM endpoint must be OpenAI-compatible (`POST /v1/chat/completions`)
+### 8.2 Runtime security notes
 
-Example `.env` entries for insights generation:
-
-```env
-LLM_BASE_URL=https://api.openai.com
-LLM_API_KEY=your_api_key
-LLM_MODEL=gpt-4.1-mini
-LLM_TIMEOUT_SECONDS=45
-RAG_MAX_CHUNKS=12
-```
+- CORS must be explicitly set for browser origins; malformed origins cause preflight failures.
+- API applies EF migrations at startup; DB unreachability prevents app startup.
+- Use EC2 IAM role for S3/SQS access, avoid long-lived AWS keys when possible.
+- Keep EC2 SG `22` restricted to your IP.
 
 ---
 
-## 8) Operational Runbook
+## 9) Operational Notes (AWS)
 
-### Start services
-```bash
-docker compose up -d --build
-```
+- Nginx gateway listens on port `80` and proxies to API on `8080`.
+- A `502 Bad Gateway` usually means upstream API failed to start.
+- Most common root causes observed:
+  - RDS SG/VPC connectivity issues.
+  - Invalid or malformed `.env.aws` values (especially `CONNSTR_RDS`, `CORS_ALLOWED_ORIGINS`).
+  - Running compose without `--env-file .env.aws`.
 
-### Watch logs
-```bash
-docker compose logs -f api
-docker compose logs -f ocr-worker
-```
+For complete deployment and troubleshooting commands, see:
 
-### Validate DB quickly
-```sql
-SELECT "Id","Status","ProcessedAtUtc" FROM "RawDocuments" ORDER BY "CreatedAtUtc" DESC LIMIT 5;
-SELECT "Id","Status","AttemptCount","Error" FROM "ProcessingJobs" ORDER BY "CreatedAtUtc" DESC LIMIT 5;
-SELECT "BiomarkerCode","Value","Unit","NormalizedValue","NormalizedUnit" FROM "BiomarkerReadings" ORDER BY "ObservedAtUtc" DESC LIMIT 20;
-```
+- `docs/AWS_FREE_TIER_DEPLOYMENT.md`
 
 ---
 
-## 9) OCR Parser Behavior
+## 10) Known Limitations and Next Improvements
 
-Current extraction supports:
-- Single-line measurement patterns
-- Multi-line table patterns (`name -> value -> range -> unit`)
-- Pipe-delimited table rows from OCR/PDF text (for example `| Hematology WBC | 9.1 x109/uL | 4.0-11.0`)
-
-Normalization covers:
-- Canonical biomarker naming (aliases)
-- Unit canonicalization and conversions (selected biomarkers)
-- Unicode/superscript unit cleanup (`µ`, `×`, `³`, `⁶`)
-
-### JSON Configuration Files
-
-The worker uses two JSON files as source of truth:
-
-- `src/OcrWorker/app/data/biomarker.json`
-    - Full biomarker catalog
-    - Per biomarker metadata: `description`, `unit`, `referenceRange`, `aliases`
-    - Used for alias-to-canonical biomarker code mapping during normalization
-
-- `src/OcrWorker/app/data/mandatory_biomarkers.json`
-    - Validation policy for report acceptance
-    - Keys:
-        - `minimumRequiredCanonicalBiomarkerCount`
-        - `mandatoryBiomarkers` (list of canonical biomarker names)
-    - Used by worker to determine `InsufficientData` outcome
-
-### Update Flow for Biomarker Rules
-
-1. Update `biomarker.json` to add/edit biomarker aliases and metadata.
-2. Update `mandatory_biomarkers.json` to change mandatory list or minimum count.
-3. Restart worker container/process.
-4. Validate:
-     - `python3 -m json.tool src/OcrWorker/app/data/biomarker.json`
-     - `python3 -m json.tool src/OcrWorker/app/data/mandatory_biomarkers.json`
-     - `python3 -m py_compile src/OcrWorker/app/worker.py src/OcrWorker/app/normalization.py`
+- Parser remains rule-based and can still miss uncommon report layouts.
+- Unit normalization coverage should continue expanding across biomarkers.
+- Worker and API currently share one EC2 host in free-tier mode (resource contention risk).
+- Add HTTPS-first edge architecture (CloudFront + ACM) for production-grade browser traffic.
+- Add deeper observability (structured logs/metrics/alerts) and backup/restore runbooks.
 
 ---
 
-## 10) Known Limitations / Next Improvements
+## 11) Change Practice
 
-- Not all biomarker/unit combinations are normalized yet
-- Parser currently rule-based (no ML document layout model yet)
-- Readings dedupe is basic and can be expanded with stronger constraints
-- API finalize error handling can be improved for cleaner downstream retry semantics
-- Insights generation currently uses lightweight retrieval from biomarker catalog/policy (replace with vector store for richer RAG)
-- Risk scoring remains deterministic baseline; add medical-grade risk models before clinical use
-
----
-
-## 11) Insights API Details
-
-### 11.1 Generate Insights
-
-- `POST /api/insights/generate/{docId}`
-- Auth required (Bearer JWT)
-- Validates document ownership
-- Requires biomarker data already present for the document
-- Returns `503` if LLM configuration is missing or provider is unavailable
-
-Example response fields:
-- `documentId`
-- `snapshotId`
-- `overallScore`
-- `confidence`
-- `riskBand`
-- `modelVersion`
-- `breakdownJson`
-- `recommendations[]`
-
-### 11.2 Get Latest Insights
-
-- `GET /api/insights/{docId}`
-- Auth required (Bearer JWT)
-- Returns latest snapshot for the document and linked recommendations
-
-### 11.3 Recommendation Types
-
-- `Insight`
-- `RiskPrediction`
-- `Action`
-
-### 11.4 Generation Pipeline
-
-1. Load document biomarkers from DB.
-2. Compute deterministic baseline score/risk band.
-3. Build retrieval context (RAG chunks) from:
-    - mandatory biomarker policy
-    - biomarker catalog metadata for present biomarkers
-4. Call configured LLM with structured prompt.
-5. Parse strict JSON recommendations and persist to `Recommendations`.
-6. Persist score metadata to `ScoreSnapshots`.
-
----
-
-## 12) Change Log Practice
-
-All incidents/fixes should be appended in:
-- `docs/PROBLEMS_AND_RESOLUTIONS.md`
-
-Expected update policy:
-- Add one new entry per issue/fix
-- Include symptom, root cause, resolution, and validation evidence
-- Keep entries chronological (latest first)
-
----
-
-## 13) Recent Fixes and Learnings (2026-03-05)
-
-### 13.1 Stabilization Fixes Implemented
-
-- Auth/register reliability
-    - Explicitly configured ASP.NET Identity password policy to match product expectations.
-    - Frontend register flow now surfaces backend validation details for faster user correction.
-
-- Frontend-to-API routing reliability in local development
-    - Angular dev server now defaults to API proxy config (`/api` -> backend host), preventing false 404 errors.
-
-- Upload reliability (CORS hardening)
-    - Added same-origin direct upload endpoint: `POST /api/uploads/direct`.
-    - Frontend upload flow switched from browser pre-signed S3 PUT to API-mediated multipart upload to remove browser preflight dependency on bucket CORS.
-
-- UX readability improvements
-    - Upload/history views now map enum numeric values to human-readable labels for status/type/source fields.
-
-- OCR quality hardening
-    - Improved parser row extraction constraints.
-    - Added OCR typo correction and fuzzy canonicalization support in normalization.
-    - Expanded biomarker alias coverage for common OCR artifacts.
-    - Filtered extracted rows to known biomarker codes to reduce noisy captures.
-
-### 13.2 Operational Learnings
-
-- Define security and validation policies explicitly in backend config; defaults can drift from UI assumptions.
-- Include proxy setup in frontend baseline config to avoid environment-specific API routing regressions.
-- For MVP/early production reliability, same-origin upload endpoints are often more stable than direct browser-to-object-store flows.
-- Convert technical enum codes to user-facing labels at the UI boundary.
-- OCR accuracy improves most when combining structural parsing, domain lexicon constraints, typo tolerance, and real-document regression checks.
-
-### 13.3 Verification Signals Used
-
-- API build success (`dotnet build src/Api/Api.csproj`).
-- Worker syntax/config checks (`python3 -m py_compile`, JSON validation).
-- Worker runtime parsing checks against stored documents via `docker compose exec ocr-worker ...`.
-- Frontend production build success (`npm run build`).
+- Add every meaningful incident and resolution to `docs/PROBLEMS_AND_RESOLUTIONS.md`.
+- Keep architecture and deployment docs synchronized whenever runtime topology or commands change.

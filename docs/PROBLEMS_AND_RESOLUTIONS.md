@@ -182,3 +182,32 @@
 - Always translate backend enum codes into user-facing labels in UI.
 - Improve OCR accuracy through layered defenses: structural parsing, domain lexicon constraints, typo/fuzzy normalization, and explicit noise filtering.
 - Validate OCR changes with both static checks (JSON/syntax compile) and document-level runtime reparse on real uploaded artifacts.
+
+## 2026-03-05 - AWS compose env values not loaded in deployment commands
+- **Area:** DevOps / AWS / Docker
+- **Symptom:** `docker compose` emitted repeated warnings that critical variables (`JWT_KEY`, `CONNSTR_RDS`, `AWS_REGION`, etc.) were not set.
+- **Root Cause:** Compose variable interpolation relied on default `.env`; deployment file used `.env.aws` but commands did not pass it explicitly.
+- **Resolution:** Standardized deployment commands to always include `--env-file .env.aws`.
+- **Validation:** Compose config and container startup no longer showed missing-variable warnings.
+- **Files Changed:**
+  - `docs/AWS_FREE_TIER_DEPLOYMENT.md`
+
+## 2026-03-05 - API startup failure caused by RDS connectivity timeout
+- **Area:** API / DB / AWS-RDS
+- **Symptom:** API container restarted with `NpgsqlException: Failed to connect to <private-ip>:5432`, and gateway returned `502`.
+- **Root Cause:** RDS was unreachable from EC2 at startup (security-group/VPC path issue), and API blocks startup while applying EF migrations.
+- **Resolution:** Corrected RDS network access from EC2 security group and verified same-VPC connectivity; restarted stack.
+- **Validation:** API health endpoint returned `200`, gateway proxied successfully, and containers stayed stable.
+- **Files Changed:**
+  - AWS Console security group rules
+  - `docs/AWS_FREE_TIER_DEPLOYMENT.md`
+
+## 2026-03-05 - Browser registration blocked by CORS preflight
+- **Area:** API / Frontend / AWS
+- **Symptom:** Browser showed `No 'Access-Control-Allow-Origin' header` for `/api/auth/register` preflight from S3 website origin.
+- **Root Cause:** Malformed `CORS_ALLOWED_ORIGINS` value in `.env.aws` (extra spacing/concatenated host).
+- **Resolution:** Set exact S3 website origin in `CORS_ALLOWED_ORIGINS` and force-recreated `api` + `api-gateway` containers.
+- **Validation:** OPTIONS preflight returned `204` with expected `Access-Control-Allow-Origin`, `Allow-Methods`, and `Allow-Headers`; registration requests proceeded.
+- **Files Changed:**
+  - `.env.aws` (on EC2)
+  - `docs/AWS_FREE_TIER_DEPLOYMENT.md`
