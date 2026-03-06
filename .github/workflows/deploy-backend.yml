@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Validate required repository variables
         run: |
-          test -n "${{ vars.EC2_HOST }}" || (echo "Missing var: EC2_HOST" && exit 1)
+          test -n "${{ vars.EC2_HOST || vars.EC2_PUBLIC_HOST }}" || (echo "Missing var: EC2_HOST (or EC2_PUBLIC_HOST)" && exit 1)
           test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "Missing secret: EC2_SSH_KEY" && exit 1)
 
       - name: Ensure required tools are available
@@ -48,7 +48,7 @@ jobs:
 
       - name: Validate host format
         env:
-          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_HOST: ${{ vars.EC2_HOST || vars.EC2_PUBLIC_HOST }}
         run: |
           set -euo pipefail
           case "$EC2_HOST" in
@@ -60,14 +60,14 @@ jobs:
 
       - name: Add target host key
         env:
-          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_HOST: ${{ vars.EC2_HOST || vars.EC2_PUBLIC_HOST }}
         run: |
           set -euo pipefail
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts || true
 
       - name: Network preflight for SSH
         env:
-          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_HOST: ${{ vars.EC2_HOST || vars.EC2_PUBLIC_HOST }}
         run: |
           set -euo pipefail
           if ! nc -zvw5 "$EC2_HOST" 22; then
@@ -78,7 +78,7 @@ jobs:
 
       - name: Deploy on EC2 over SSH
         env:
-          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_HOST: ${{ vars.EC2_HOST || vars.EC2_PUBLIC_HOST }}
           EC2_USER: ${{ vars.EC2_USER }}
           EC2_APP_PATH: ${{ vars.EC2_APP_PATH }}
         run: |

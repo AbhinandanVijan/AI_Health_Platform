@@ -271,6 +271,7 @@ docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
 Required GitHub variables:
 
 - `EC2_HOST` (hostname or IP only, no `http://`)
+- Fallback: `EC2_PUBLIC_HOST` (used when `EC2_HOST` is not set)
 - Optional `EC2_USER` (defaults to `ec2-user`)
 - Optional `EC2_APP_PATH` (defaults to `/home/ec2-user/AI_Health_Platform`)
 
@@ -398,6 +399,7 @@ Replace `<FRONTEND_BUCKET>`:
 7. Set GitHub repo variables/secrets for backend deploy:
 
 - `EC2_HOST=3.150.117.161` (example)
+- Or `EC2_PUBLIC_HOST=3.150.117.161` (legacy fallback)
 - Optional `EC2_USER=ec2-user`
 - Optional `EC2_APP_PATH=/home/ec2-user/AI_Health_Platform`
 - `EC2_SSH_KEY` as repository secret (entire PEM private key)
