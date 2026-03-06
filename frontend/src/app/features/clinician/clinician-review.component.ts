@@ -24,7 +24,7 @@ import { ClinicianRecommendationQueueItem } from '../../core/models/api.models';
             <p class="page-subtitle">Review and approve AI-generated recommendations requested by patients.</p>
           </div>
           <button mat-stroked-button (click)="reload()" [disabled]="loading()">
-            <mat-icon>refresh</mat-icon> Refresh
+            Refresh
           </button>
         </div>
         <p *ngIf="error()" class="error-message">{{ error() }}</p>
@@ -35,7 +35,7 @@ import { ClinicianRecommendationQueueItem } from '../../core/models/api.models';
       </div>
 
       <mat-card *ngIf="!loading() && items().length === 0" class="empty-card">
-        <mat-icon class="empty-icon">check_circle_outline</mat-icon>
+        
         <p class="empty-text">No pending review requests. All caught up!</p>
       </mat-card>
 
@@ -44,11 +44,6 @@ import { ClinicianRecommendationQueueItem } from '../../core/models/api.models';
           <div class="title-row">
             <h3 class="rec-title">{{ item.title }}</h3>
             <span class="type-badge type-{{ item.type }}">{{ typeName(item.type) }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-item"><mat-icon class="meta-icon">person</mat-icon>{{ item.userEmail || item.userId }}</span>
-            <span class="meta-item"><mat-icon class="meta-icon">folder</mat-icon>{{ item.documentId | slice:0:8 }}…</span>
-            <span class="meta-item"><mat-icon class="meta-icon">schedule</mat-icon>{{ item.createdAtUtc | date:'medium' }}</span>
           </div>
         </div>
 
@@ -73,14 +68,12 @@ import { ClinicianRecommendationQueueItem } from '../../core/models/api.models';
           <button mat-stroked-button
             (click)="toggleEdit(item)"
             [disabled]="approvingIds().has(item.id)">
-            <mat-icon>{{ editingIds().has(item.id) ? 'close' : 'edit' }}</mat-icon>
             {{ editingIds().has(item.id) ? 'Cancel Edit' : 'Edit' }}
           </button>
           <button mat-flat-button color="primary"
             (click)="approve(item)"
             [disabled]="approvingIds().has(item.id)">
             <mat-spinner *ngIf="approvingIds().has(item.id)" diameter="18" class="btn-spinner"></mat-spinner>
-            <mat-icon *ngIf="!approvingIds().has(item.id)">check_circle</mat-icon>
             {{ approvingIds().has(item.id) ? 'Approving…' : (editingIds().has(item.id) ? 'Approve with Changes' : 'Approve') }}
           </button>
         </div>

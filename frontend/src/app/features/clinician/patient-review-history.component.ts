@@ -3,7 +3,6 @@ import { DatePipe, NgFor, NgIf, SlicePipe } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDividerModule } from '@angular/material/divider';
-import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService } from '../../core/services/api.service';
 import { ApprovedRecommendationItem } from '../../core/models/api.models';
@@ -11,7 +10,7 @@ import { ApprovedRecommendationItem } from '../../core/models/api.models';
 @Component({
   selector: 'app-patient-review-history',
   standalone: true,
-  imports: [NgIf, NgFor, DatePipe, SlicePipe, MatCardModule, MatButtonModule, MatDividerModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [NgIf, NgFor, DatePipe, SlicePipe, MatCardModule, MatButtonModule, MatDividerModule, MatProgressSpinnerModule],
   template: `
     <div class="page-container">
       <mat-card class="header-card">
@@ -21,7 +20,7 @@ import { ApprovedRecommendationItem } from '../../core/models/api.models';
             <p class="page-subtitle">All recommendations you have approved for patients.</p>
           </div>
           <button mat-stroked-button (click)="reload()" [disabled]="loading()">
-            <mat-icon>refresh</mat-icon> Refresh
+            Refresh
           </button>
         </div>
         <p *ngIf="error()" class="error-message">{{ error() }}</p>
@@ -32,7 +31,7 @@ import { ApprovedRecommendationItem } from '../../core/models/api.models';
       </div>
 
       <mat-card *ngIf="!loading() && items().length === 0" class="empty-card">
-        <mat-icon class="empty-icon">history</mat-icon>
+
         <p class="empty-text">No approved recommendations on record yet.</p>
       </mat-card>
 
@@ -43,10 +42,10 @@ import { ApprovedRecommendationItem } from '../../core/models/api.models';
             <span class="type-badge type-{{ item.type }}">{{ typeName(item.type) }}</span>
           </div>
           <div class="meta-row">
-            <span class="meta-item"><mat-icon class="meta-icon">person</mat-icon>{{ item.userEmail || item.userId }}</span>
-            <span class="meta-item"><mat-icon class="meta-icon">folder</mat-icon>{{ item.documentId | slice:0:8 }}…</span>
+            <span class="meta-item">{{ item.userEmail || item.userId }}</span>
+            <span class="meta-item">Doc: {{ item.documentId | slice:0:8 }}…</span>
             <span class="meta-item approved-date">
-              <mat-icon class="meta-icon">verified</mat-icon>Approved {{ item.approvedAtUtc | date:'medium' }}
+              ✓ Approved {{ item.approvedAtUtc | date:'medium' }}
             </span>
           </div>
         </div>
