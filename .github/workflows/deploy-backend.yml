@@ -16,7 +16,6 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -28,102 +27,87 @@ jobs:
     steps:
       - name: Validate required repository variables
         run: |
-          test -n "${{ vars.AWS_OIDC_ROLE_ARN }}" || (echo "Missing var: AWS_OIDC_ROLE_ARN" && exit 1)
-          test -n "${{ vars.AWS_REGION }}" || (echo "Missing var: AWS_REGION" && exit 1)
-          test -n "${{ vars.EC2_INSTANCE_ID }}" || (echo "Missing var: EC2_INSTANCE_ID" && exit 1)
+          test -n "${{ vars.EC2_HOST }}" || (echo "Missing var: EC2_HOST" && exit 1)
+          test -n "${{ secrets.EC2_SSH_KEY }}" || (echo "Missing secret: EC2_SSH_KEY" && exit 1)
 
       - name: Ensure required tools are available
         run: |
           set -euo pipefail
-          command -v python3 >/dev/null || (echo "python3 is required on runner" && exit 1)
-          if ! command -v aws >/dev/null; then
+          if ! command -v ssh >/dev/null; then
             sudo apt-get update
-            sudo apt-get install -y awscli
+            sudo apt-get install -y openssh-client
           fi
 
-      - name: Assume AWS role via OIDC
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_OIDC_ROLE_ARN: ${{ vars.AWS_OIDC_ROLE_ARN }}
+      - name: Configure SSH key
         run: |
           set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
-          OIDC_TOKEN=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
-
-          CREDS_JSON=$(aws sts assume-role-with-web-identity \
-            --role-arn "$AWS_OIDC_ROLE_ARN" \
-            --role-session-name "gha-backend-deploy" \
-            --web-identity-token "$OIDC_TOKEN" \
-            --duration-seconds 3600 \
-            --region "$AWS_REGION")
-
-          AWS_ACCESS_KEY_ID=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["AccessKeyId"])' <<< "$CREDS_JSON")
-          AWS_SECRET_ACCESS_KEY=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["SecretAccessKey"])' <<< "$CREDS_JSON")
-          AWS_SESSION_TOKEN=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["Credentials"]["SessionToken"])' <<< "$CREDS_JSON")
-
-          {
-            echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-            echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
-            echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN"
-            echo "AWS_REGION=$AWS_REGION"
-          } >> "$GITHUB_ENV"
-
-      - name: Deploy on EC2 using SSM
+      - name: Validate host format
         env:
-          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          EC2_HOST: ${{ vars.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          case "$EC2_HOST" in
+            http://*|https://*)
+              echo "EC2_HOST must be a hostname or IP only (no scheme)."
+              exit 1
+              ;;
+          esac
+
+      - name: Add target host key
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts || true
+
+      - name: Network preflight for SSH
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          if ! nc -zvw5 "$EC2_HOST" 22; then
+            echo "Port 22 is unreachable from this runner."
+            echo "Allow inbound SSH from GitHub-hosted runners or use a self-hosted runner on EC2."
+            exit 1
+          fi
+
+      - name: Deploy on EC2 over SSH
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
           EC2_APP_PATH: ${{ vars.EC2_APP_PATH }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
+
+          USER_NAME="$EC2_USER"
+          if [ -z "$USER_NAME" ]; then
+            USER_NAME='ec2-user'
+          fi
 
           APP_PATH="$EC2_APP_PATH"
           if [ -z "$APP_PATH" ]; then
             APP_PATH='/home/ec2-user/AI_Health_Platform'
           fi
 
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$EC2_INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --comment "GitHub Actions backend deploy" \
-            --parameters commands="[\"set -euo pipefail\",\"cd $APP_PATH\",\"git fetch --all\",\"git checkout main\",\"git pull origin main\",\"docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build\",\"docker compose --env-file .env.aws -f docker-compose.aws.yml ps\",\"curl -fsS http://localhost/health > /dev/null\",\"echo Backend deploy completed and health check passed.\"]" \
-            --query "Command.CommandId" \
-            --output text \
-            --region "$AWS_REGION")
+          REMOTE_TARGET="$USER_NAME@$EC2_HOST"
 
-          echo "SSM command id: $COMMAND_ID"
+          SSH_OPTS="-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
 
-          for i in $(seq 1 60); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$EC2_INSTANCE_ID" \
-              --query "Status" \
-              --output text \
-              --region "$AWS_REGION" 2>/dev/null || true)
+          ssh $SSH_OPTS "$REMOTE_TARGET" "echo SSH connection established"
 
-            if [ "$STATUS" = "Success" ]; then
-              echo "Backend deploy succeeded via SSM."
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$EC2_INSTANCE_ID" \
-                --query "StandardOutputContent" \
-                --output text \
-                --region "$AWS_REGION"
-              exit 0
-            fi
-
-            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              echo "Backend deploy failed with status: $STATUS"
-              aws ssm get-command-invocation \
-                --command-id "$COMMAND_ID" \
-                --instance-id "$EC2_INSTANCE_ID" \
-                --query "StandardErrorContent" \
-                --output text \
-                --region "$AWS_REGION" || true
-              exit 1
-            fi
-
-            sleep 5
-          done
-
-          echo "Timed out waiting for SSM command completion"
-          exit 1
+          ssh $SSH_OPTS "$REMOTE_TARGET" "
+            set -euo pipefail
+            cd '$APP_PATH'
+            git fetch --all
+            git checkout main
+            git pull origin main
+            docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
+            docker compose --env-file .env.aws -f docker-compose.aws.yml ps
+            curl -fsS http://localhost/health > /dev/null
+            echo Backend deploy completed and health check passed.
+          "

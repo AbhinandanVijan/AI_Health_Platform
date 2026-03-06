@@ -258,9 +258,8 @@ Trigger:
 
 Behavior:
 
-1. Assume AWS role via OIDC.
-2. Use AWS SSM Run Command on target EC2 instance.
-3. Pull latest `main` on instance.
+1. Connect to EC2 over SSH from GitHub runner.
+2. Pull latest `main` on instance.
 3. Run:
 
 ```bash
@@ -271,10 +270,13 @@ docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build
 
 Required GitHub variables:
 
-- `AWS_OIDC_ROLE_ARN`
-- `AWS_REGION`
-- `EC2_INSTANCE_ID`
+- `EC2_HOST` (hostname or IP only, no `http://`)
+- Optional `EC2_USER` (defaults to `ec2-user`)
 - Optional `EC2_APP_PATH` (defaults to `/home/ec2-user/AI_Health_Platform`)
+
+Required GitHub secret:
+
+- `EC2_SSH_KEY` (full private key content for the deploy key pair)
 
 ### 9.2 Frontend deploy workflow
 
@@ -386,22 +388,26 @@ Replace `<FRONTEND_BUCKET>`:
 
 4. In role `Permissions`, add inline policy from section 9.5.
 
-5. Copy role ARN and set GitHub repo variable:
+5. Copy role ARN and set GitHub repo variable for frontend workflow:
 - `AWS_OIDC_ROLE_ARN=<role-arn>`
 
 6. Set remaining GitHub repo variables:
 - `AWS_REGION=us-east-2`
 - `FRONTEND_BUCKET=aihealth-frontend-abhinandan`
-- Optional `EC2_APP_PATH=~/AI_Health_Platform`
 
-7. Set GitHub repo secrets for backend deploy:
+7. Set GitHub repo variables/secrets for backend deploy:
 
-No SSH secrets are required for backend deploy when using SSM.
+- `EC2_HOST=3.150.117.161` (example)
+- Optional `EC2_USER=ec2-user`
+- Optional `EC2_APP_PATH=/home/ec2-user/AI_Health_Platform`
+- `EC2_SSH_KEY` as repository secret (entire PEM private key)
 
 8. Create GitHub environment:
 - Repo -> Settings -> Environments -> New environment -> `production`
 
-9. Trigger workflow manually (Actions -> `Deploy Frontend to S3` -> `Run workflow`) and confirm successful S3 sync.
+9. Trigger workflows manually as needed:
+- Frontend: Actions -> `Deploy Frontend to S3` -> `Run workflow`
+- Backend: Actions -> `Deploy Backend to EC2` -> `Run workflow`
 
 ### 9.7 GitHub Actions permissions setting
 
@@ -411,14 +417,15 @@ In GitHub repo settings:
 2. Under `Workflow permissions`, select `Read and write permissions`
 3. Save
 
-### 9.8 Additional IAM permissions for backend SSM deploy
+### 9.8 Backend SSH network prerequisites
 
-The OIDC role used by backend workflow also needs:
+1. EC2 security group must allow inbound `22` from GitHub Actions runner IPs or from an IP range/pattern you control.
+2. EC2 user home/app path must be readable and writable by the deploy user.
+3. SSH private key in `EC2_SSH_KEY` must match the public key accepted by the target EC2 instance.
 
-- `ssm:SendCommand`
-- `ssm:GetCommandInvocation`
+If backend workflow still fails with SSH timeout:
 
-Recommended scope:
-
-- target EC2 instance ARN
-- SSM document ARN: `arn:aws:ssm:<region>::document/AWS-RunShellScript`
+1. Verify local connectivity to the same host: `nc -zv <EC2_HOST> 22`.
+2. In EC2 security group, temporarily allow `22` from `0.0.0.0/0` for a short test window.
+3. Re-run `Deploy Backend to EC2`; if it succeeds, tighten `22` again and move to a stable model.
+4. For long-term stability, prefer a self-hosted runner on EC2 so SSH stays internal.
