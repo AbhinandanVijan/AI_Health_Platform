@@ -8,7 +8,6 @@ This repository contains:
 - Python OCR worker (`src/OcrWorker`)
 - Angular frontend (`frontend`)
 - Deployment and operations docs (`docs`)
-- [Live Project Url - Hosted on AWS (S3, RDS, SQS, IAM)](http://aihealth-frontend-abhinandan.s3-website.us-east-2.amazonaws.com/login)
 ## Architecture
 
 ### Production (current AWS deployment)
